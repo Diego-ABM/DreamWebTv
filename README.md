@@ -23,6 +23,8 @@ DreamWeb es un navegador web optimizado para **Android TV**, diseñado para ofre
 - `ui/`: Actividades y componentes de la interfaz de usuario.
     - `HomeActivity`: Pantalla principal del navegador.
     - `BrowserActivity`: Actividad dedicada a la visualización de contenido web.
+- `engine/`: Motores y clientes para el renderizado web.
+    - `CustomWebChromeClient`: Gestión de pantalla completa y visualización de video.
 - `AdBlockManager`: Gestión del filtrado de contenido publicitario.
 
 ## 🛠️ Instalación y Uso

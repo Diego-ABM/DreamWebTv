@@ -2,16 +2,19 @@ package com.example.dreamweb.ui
 
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.View
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.example.dreamweb.BrowserApp
 import com.example.dreamweb.databinding.ActivityBrowserBinding
 import com.example.dreamweb.engine.CustomWebClient
+import com.example.dreamweb.engine.CustomWebChromeClient
 
 class BrowserActivity : AppCompatActivity() {
     private lateinit var binding: ActivityBrowserBinding
     private var webView: WebView? = null
+    private var chromeClient: CustomWebChromeClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,7 +27,10 @@ class BrowserActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView?.canGoBack() == true) {
+                val chrome = chromeClient
+                if (chrome != null && chrome.isFullscreen()) {
+                    chrome.onHideCustomView()
+                } else if (webView?.canGoBack() == true) {
                     webView?.goBack()
                 } else {
                     isEnabled = false
@@ -38,6 +44,16 @@ class BrowserActivity : AppCompatActivity() {
         val app = application as BrowserApp
         webView = app.container.webViewPool.getWebView(this).apply {
             webViewClient = CustomWebClient(app.container.adBlockManager, app.container.historyManager)
+            
+            chromeClient = CustomWebChromeClient(
+                this@BrowserActivity,
+                binding.webViewContainer,
+                binding.fullscreenContainer
+            ) { isFullscreen ->
+                binding.virtualCursor.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+            }
+            webChromeClient = chromeClient
+
             loadUrl(url)
         }
         
