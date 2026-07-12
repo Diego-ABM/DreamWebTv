@@ -19,6 +19,12 @@ class CustomWebClient(
     private val scope = CoroutineScope(Dispatchers.Main)
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+        val url = request?.url?.toString() ?: return false
+        
+        if (adBlockManager.shouldBlock(url)) {
+            return true // Block the navigation
+        }
+
         return false // Let WebView handle it
     }
 

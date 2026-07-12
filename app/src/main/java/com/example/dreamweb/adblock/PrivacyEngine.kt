@@ -37,7 +37,12 @@ class PrivacyEngine {
                         });
                     };
                 }
-                // Optional: add more obfuscation here
+                
+                // Block JS-initiated popups
+                window.open = function() { 
+                    console.log('Blocked popup attempt');
+                    return null; 
+                };
             })();
         """.trimIndent()
         webView.evaluateJavascript(script, null)

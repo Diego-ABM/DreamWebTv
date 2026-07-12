@@ -1,7 +1,11 @@
 package com.example.dreamweb.engine
 
+import android.os.Message
+import android.util.Log
 import android.view.View
+import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
+import android.webkit.WebView
 import android.widget.FrameLayout
 
 class CustomWebChromeClient(
@@ -15,6 +19,23 @@ class CustomWebChromeClient(
     private var customViewCallback: CustomViewCallback? = null
 
     fun isFullscreen(): Boolean = customView != null
+
+    override fun onCreateWindow(
+        view: WebView?,
+        isDialog: Boolean,
+        isUserGesture: Boolean,
+        resultMsg: Message?
+    ): Boolean {
+        Log.d("DreamWeb", "Blocked attempt to open new window. Gesture: $isUserGesture")
+        return false
+    }
+
+    override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+        consoleMessage?.let {
+            Log.d("DreamWebConsole", "${it.message()} -- From line ${it.lineNumber()} of ${it.sourceId()}")
+        }
+        return super.onConsoleMessage(consoleMessage)
+    }
 
     override fun onShowCustomView(view: View?, requestedOrientation: Int, callback: CustomViewCallback?) {
         onShowCustomView(view, callback)

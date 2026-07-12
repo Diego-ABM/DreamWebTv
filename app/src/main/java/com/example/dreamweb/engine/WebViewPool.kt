@@ -34,6 +34,10 @@ class WebViewPool(private val context: Context) {
                 displayZoomControls = false
                 textZoom = 110 // Scale up for TV
                 
+                // Anti-popup and performance settings
+                setSupportMultipleWindows(true)
+                javaScriptCanOpenWindowsAutomatically = false
+                
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     forceDark = WebSettings.FORCE_DARK_ON
                 }
