@@ -1,0 +1,40 @@
+# Built-in ignores
+*.iml
+.gradle
+.kotlin/
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.out
+
+# Keystore files
+*.jks
+*.keystore
+
+# Google Services
+# google-services.json
+
+# Log files
+*.log
+
+# Android Studio
+captures/
+
+# Root build directory
+/build/
+
+# Local configuration file (sdk path, etc)
+local.properties

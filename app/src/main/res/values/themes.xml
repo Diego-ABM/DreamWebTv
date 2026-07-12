@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.DreamWeb" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#1A1A1A</item>
+        <item name="colorPrimary">#3D5AFE</item>
+        <item name="colorPrimaryDark">#304FFE</item>
+        <item name="colorAccent">#FF4081</item>
+    </style>
+</resources>
