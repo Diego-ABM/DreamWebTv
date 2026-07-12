@@ -6,10 +6,12 @@ import android.view.View
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.example.dreamweb.BrowserApp
 import com.example.dreamweb.databinding.ActivityBrowserBinding
 import com.example.dreamweb.engine.CustomWebClient
 import com.example.dreamweb.engine.CustomWebChromeClient
+import kotlinx.coroutines.launch
 
 class BrowserActivity : AppCompatActivity() {
     private lateinit var binding: ActivityBrowserBinding
@@ -24,6 +26,10 @@ class BrowserActivity : AppCompatActivity() {
         val url = intent.getStringExtra("URL") ?: "https://www.google.com"
         
         setupWebView(url)
+
+        binding.favoriteButton.setOnClickListener {
+            addCurrentPageToFavorites()
+        }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -51,6 +57,7 @@ class BrowserActivity : AppCompatActivity() {
                 binding.fullscreenContainer
             ) { isFullscreen ->
                 binding.virtualCursor.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+                binding.favoriteButton.visibility = if (isFullscreen) View.GONE else View.VISIBLE
             }
             webChromeClient = chromeClient
 
@@ -58,6 +65,18 @@ class BrowserActivity : AppCompatActivity() {
         }
         
         binding.webViewContainer.addView(webView)
+    }
+
+    private fun addCurrentPageToFavorites() {
+        val app = application as BrowserApp
+        val url = webView?.url
+        val title = webView?.title
+        if (url != null) {
+            lifecycleScope.launch {
+                app.container.bookmarkManager.addBookmark(url, title)
+                binding.favoriteButton.setImageResource(android.R.drawable.btn_star_big_on)
+            }
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

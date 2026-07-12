@@ -17,6 +17,17 @@
         android:background="#000000"
         android:visibility="gone" />
 
+    <ImageButton
+        android:id="@+id/favoriteButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="16dp"
+        android:src="@android:drawable/btn_star_big_off"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:focusable="true"
+        android:contentDescription="Añadir a favoritos" />
+
     <ImageView
         android:id="@+id/virtualCursor"
         android:layout_width="20dp"

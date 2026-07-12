@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -25,6 +26,7 @@
         android:textColor="#FFFFFF"
         android:textColorHint="#888888"
         android:background="@android:drawable/editbox_background_normal"
+        android:backgroundTint="#333333"
         android:padding="16dp"
         android:singleLine="true"
         android:imeOptions="actionGo"
@@ -45,10 +47,27 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:text="Favoritos"
+        android:textColor="#AAAAAA"
+        android:textSize="18sp"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="8dp"/>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/favoritesRecyclerView"
+        android:layout_width="800dp"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:orientation="horizontal"
+        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:text="Historial Reciente"
         android:textColor="#AAAAAA"
         android:textSize="18sp"
-        android:layout_marginTop="40dp"
+        android:layout_marginTop="16dp"
         android:layout_marginBottom="8dp"/>
 
     <androidx.recyclerview.widget.RecyclerView

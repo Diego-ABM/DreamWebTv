@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 class HomeActivity : AppCompatActivity() {
     private lateinit var binding: ActivityHomeBinding
     private lateinit var historyAdapter: HistoryAdapter
+    private lateinit var favoritesAdapter: FavoritesAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,6 +27,7 @@ class HomeActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupHistoryList()
+        setupFavoritesList()
 
         binding.searchEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_GO) {
@@ -44,6 +46,7 @@ class HomeActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         loadHistory()
+        loadBookmarks()
     }
 
     private fun setupHistoryList() {
@@ -56,11 +59,29 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupFavoritesList() {
+        favoritesAdapter = FavoritesAdapter { url ->
+            navigateToBrowser(url)
+        }
+        binding.favoritesRecyclerView.apply {
+            layoutManager = LinearLayoutManager(this@HomeActivity, LinearLayoutManager.HORIZONTAL, false)
+            adapter = favoritesAdapter
+        }
+    }
+
     private fun loadHistory() {
         val app = application as BrowserApp
         lifecycleScope.launch {
             val history = app.container.historyManager.getRecentHistory(10)
             historyAdapter.submitList(history)
+        }
+    }
+
+    private fun loadBookmarks() {
+        val app = application as BrowserApp
+        lifecycleScope.launch {
+            val bookmarks = app.container.bookmarkManager.getAllBookmarks()
+            favoritesAdapter.submitList(bookmarks)
         }
     }
 
@@ -109,6 +130,39 @@ class HomeActivity : AppCompatActivity() {
             fun bind(item: Pair<String, String>, onClick: (String) -> Unit) {
                 titleText.text = if (item.second.isBlank()) item.first else item.second
                 urlText.text = item.first
+                itemView.setOnClickListener { onClick(item.first) }
+            }
+        }
+    }
+
+    class FavoritesAdapter(private val onClick: (String) -> Unit) :
+        RecyclerView.Adapter<FavoritesAdapter.ViewHolder>() {
+
+        private var items = listOf<Pair<String, String>>()
+
+        fun submitList(newList: List<Pair<String, String>>) {
+            items = newList
+            notifyDataSetChanged()
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_favorite, parent, false)
+            return ViewHolder(view)
+        }
+
+        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+            val item = items[position]
+            holder.bind(item, onClick)
+        }
+
+        override fun getItemCount() = items.size
+
+        class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            private val titleText: TextView = view.findViewById(R.id.titleText)
+
+            fun bind(item: Pair<String, String>, onClick: (String) -> Unit) {
+                titleText.text = if (item.second.isBlank()) item.first else item.second
                 itemView.setOnClickListener { onClick(item.first) }
             }
         }
