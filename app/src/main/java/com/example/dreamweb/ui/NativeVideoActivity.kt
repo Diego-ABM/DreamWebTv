@@ -64,13 +64,24 @@ class NativeVideoActivity : AppCompatActivity() {
         val dataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
             .setUserAgent(customUA)
         
-        // Agregar cabeceras críticas
+        // Agregar cabeceras críticas (Referer, Origin, etc)
+        val headers = mutableMapOf<String, String>()
         if (referer.isNotEmpty()) {
-            val headers = mutableMapOf<String, String>()
             headers["Referer"] = referer
-            headers["Origin"] = referer.substringBefore("/", "").plus("//").plus(referer.substringAfter("//").substringBefore("/"))
-            dataSourceFactory.setDefaultRequestProperties(headers)
+            val origin = try {
+                val uri = android.net.Uri.parse(referer)
+                "${uri.scheme}://${uri.host}"
+            } catch (ignored: Exception) {
+                referer
+            }
+            headers["Origin"] = origin
         }
+        // Algunas CDNs requieren estas cabeceras para streaming
+        headers["Sec-Fetch-Mode"] = "cors"
+        headers["Sec-Fetch-Site"] = "cross-site"
+        headers["Accept"] = "*/*"
+        
+        dataSourceFactory.setDefaultRequestProperties(headers)
 
         val mediaSourceFactory = DefaultMediaSourceFactory(this)
             .setDataSourceFactory(dataSourceFactory)
@@ -80,6 +91,12 @@ class NativeVideoActivity : AppCompatActivity() {
             .build().apply {
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
+                // Intentar detectar el tipo de contenido por la URL
+                .setMimeType(when {
+                    url.contains(".m3u8") -> androidx.media3.common.MimeTypes.APPLICATION_M3U8
+                    url.contains(".mpd") -> androidx.media3.common.MimeTypes.APPLICATION_MPD
+                    else -> null
+                })
                 .build()
             setMediaItem(mediaItem)
             prepare()
@@ -89,9 +106,19 @@ class NativeVideoActivity : AppCompatActivity() {
         binding.playerView.player = player
         
         player?.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                binding.loadingIndicator.visibility = if (playbackState == androidx.media3.common.Player.STATE_BUFFERING) {
+                    android.view.View.VISIBLE
+                } else {
+                    android.view.View.GONE
+                }
+            }
+
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                binding.loadingIndicator.visibility = android.view.View.GONE
                 android.util.Log.e("NativeVideo", "ExoPlayer Error: ${error.message}", error)
-                android.widget.Toast.makeText(this@NativeVideoActivity, "Error: El servidor no permite reproducción externa directa", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(this@NativeVideoActivity, "Error de reproducción: El servidor denegó el acceso o el formato no es compatible", android.widget.Toast.LENGTH_LONG).show()
+                finish()
             }
         })
     }

@@ -51,21 +51,37 @@ class CustomWebClient(
     ): WebResourceResponse? {
         val url = request?.url?.toString() ?: return null
         
-        // Video Sniffing robusto y preciso (Inspirado en Android-WebCast)
+        // Video Sniffing robusto y preciso (Inspirado en Android-WebCast y Scraping-Tutorial)
         val urlLower = url.lowercase()
-        val isMediaFile = urlLower.endsWith(".mp4") || urlLower.endsWith(".m3u8") || 
-                         urlLower.endsWith(".mpd") || urlLower.endsWith(".mkv") ||
-                         urlLower.contains(".m3u8?") || urlLower.contains(".mp4?") || 
-                         urlLower.contains("/video.ts") || urlLower.contains(".m3u8#") ||
-                         urlLower.contains("/manifest(") || urlLower.contains("playlist.m3u8")
         
-        val isAdOrTracker = urlLower.contains("cuid") || urlLower.contains("analytics") || 
-                           urlLower.contains("doubleclick") || urlLower.contains("pixel")
-        
-        if (isMediaFile && !isAdOrTracker) {
+        // Extensiones y patrones de video comunes
+        val isVideoFormat = urlLower.contains(".m3u8") || 
+                            urlLower.contains(".mp4") || 
+                            urlLower.contains(".mpd") || 
+                            urlLower.contains(".mkv") ||
+                            urlLower.contains(".webm") ||
+                            urlLower.contains("/manifest") ||
+                            urlLower.contains(".m3u8?") ||
+                            urlLower.contains("playlist.m3u8")
+
+        // Filtrado de segmentos (no queremos capturar cada .ts individual)
+        val isSegment = urlLower.contains(".ts") || 
+                        urlLower.contains("/segment") || 
+                        urlLower.contains("range=")
+
+        // Filtrado de publicidad común en reproductores
+        val isAdOrTracker = urlLower.contains("adsystem") || 
+                           urlLower.contains("adserver") || 
+                           urlLower.contains("analytics") || 
+                           urlLower.contains("doubleclick") || 
+                           urlLower.contains("pixel") ||
+                           urlLower.contains("googlesyndication") ||
+                           urlLower.contains("/ads/")
+
+        if (isVideoFormat && !isSegment && !isAdOrTracker) {
             android.util.Log.d("DreamWebSniffer", "Media file detected: $url")
             scope.launch {
-                // Pasamos la URL del video y la URL de la página actual como Referer
+                // Capturamos el Referer y el User-Agent actual para el reproductor
                 val referer = view?.url ?: ""
                 onVideoDetected("$url|REFERER|$referer")
             }
@@ -97,37 +113,64 @@ class CustomWebClient(
         val js = """
             (function() {
                 console.log('DreamWeb JS Sniffer Active');
+                
+                function notify(src) {
+                    if (src && src.startsWith('http') && !src.includes('blob:')) {
+                        window.DreamWebSniffer.onVideoFound(src);
+                    }
+                }
+
                 function checkVideos() {
+                    // 1. Escaneo de etiquetas <video>
                     var videos = document.getElementsByTagName('video');
                     for (var i = 0; i < videos.length; i++) {
                         var src = videos[i].src || videos[i].currentSrc;
-                        if (src && src.indexOf('blob:') !== 0) {
-                            window.DreamWebSniffer.onVideoFound(src);
-                        }
+                        notify(src);
                         
-                        // Try to find the source in children
                         var sources = videos[i].getElementsByTagName('source');
                         for (var k = 0; k < sources.length; k++) {
-                            if (sources[k].src && sources[k].src.indexOf('blob:') !== 0) {
-                                window.DreamWebSniffer.onVideoFound(sources[k].src);
-                            }
+                            notify(sources[k].src);
                         }
                     }
                     
-                    // JW Player specific
-                    if (window.jwplayer) {
-                        try {
+                    // 2. Escaneo de iframes (común en sitios de streaming)
+                    var iframes = document.getElementsByTagName('iframe');
+                    for (var j = 0; j < iframes.length; j++) {
+                        var isrc = iframes[j].src;
+                        if (isrc && (isrc.includes('embed') || isrc.includes('player') || isrc.includes('video'))) {
+                            // Intentamos detectar si el iframe apunta directamente a un stream
+                            if (isrc.includes('.m3u8') || isrc.includes('.mp4')) {
+                                notify(isrc);
+                            }
+                        }
+                    }
+
+                    // 3. Variables de reproductores comunes (JWPlayer, VideoJS, etc)
+                    try {
+                        if (window.jwplayer) {
                             var p = window.jwplayer();
                             if (p && p.getPlaylist) {
-                                var file = p.getPlaylist()[0].file;
-                                if (file) window.DreamWebSniffer.onVideoFound(file);
+                                var item = p.getPlaylist()[0];
+                                if (item && item.file) notify(item.file);
                             }
-                        } catch(e) {}
-                    }
+                        }
+                        if (window.videojs) {
+                            var players = window.videojs.players;
+                            for (var p in players) {
+                                notify(players[p].currentSrc());
+                            }
+                        }
+                    } catch(e) {}
                 }
                 
+                // Monitorizar cambios en el DOM para nuevos videos
+                var observer = new MutationObserver(function(mutations) {
+                    checkVideos();
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+                
                 checkVideos();
-                setInterval(checkVideos, 5000);
+                setInterval(checkVideos, 10000); // Chequeo periódico fallback
             })();
         """.trimIndent()
         webView.evaluateJavascript(js, null)
