@@ -29,6 +29,7 @@ class WebViewPool(private val context: Context) {
                 databaseEnabled = true
                 useWideViewPort = true
                 loadWithOverviewMode = true
+                userAgentString = UserAgentConfig.MOBILE_TV
                 setSupportZoom(true)
                 builtInZoomControls = true
                 displayZoomControls = false
@@ -56,6 +57,7 @@ class WebViewPool(private val context: Context) {
         (webView.parent as? ViewGroup)?.removeView(webView)
         webView.apply {
             stopLoading()
+            settings.userAgentString = UserAgentConfig.MOBILE_TV // Reset UA
             loadUrl("about:blank")
             clearHistory()
         }

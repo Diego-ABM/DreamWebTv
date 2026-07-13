@@ -37,6 +37,11 @@
             android:exported="false"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|keyboardHidden|keyboard" />
+        <activity
+            android:name=".ui.NativeVideoActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard" />
     </application>
 
 </manifest>

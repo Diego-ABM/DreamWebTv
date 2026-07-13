@@ -11,12 +11,14 @@ import com.example.dreamweb.BrowserApp
 import com.example.dreamweb.databinding.ActivityBrowserBinding
 import com.example.dreamweb.engine.CustomWebClient
 import com.example.dreamweb.engine.CustomWebChromeClient
+import com.example.dreamweb.managers.VideoPlayerManager
 import kotlinx.coroutines.launch
 
 class BrowserActivity : AppCompatActivity() {
     private lateinit var binding: ActivityBrowserBinding
     private var webView: WebView? = null
     private var chromeClient: CustomWebChromeClient? = null
+    private var lastDetectedVideoUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +31,23 @@ class BrowserActivity : AppCompatActivity() {
 
         binding.favoriteButton.setOnClickListener {
             addCurrentPageToFavorites()
+        }
+
+        binding.uaToggleButton.setOnClickListener {
+            toggleUserAgent()
+        }
+
+        binding.externalPlayerButton.setOnClickListener {
+            android.util.Log.d("DreamWebUI", "External Player Button Clicked")
+            lastDetectedVideoUrl?.let { videoData ->
+                android.util.Log.d("DreamWebUI", "Launching player for: $videoData")
+                val ua = webView?.settings?.userAgentString ?: ""
+                val videoDataWithUA = "$videoData|UA|$ua"
+                VideoPlayerManager.launchPlayer(webView, videoDataWithUA)
+            } ?: run {
+                android.util.Log.d("DreamWebUI", "No video URL detected yet")
+                android.widget.Toast.makeText(this, "No se ha detectado un video aún", android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -49,8 +68,22 @@ class BrowserActivity : AppCompatActivity() {
     private fun setupWebView(url: String) {
         val app = application as BrowserApp
         webView = app.container.webViewPool.getWebView(this).apply {
-            webViewClient = CustomWebClient(app.container.adBlockManager, app.container.historyManager)
+            webViewClient = CustomWebClient(
+                app.container.adBlockManager,
+                app.container.historyManager
+            ) { videoUrl ->
+                onVideoFound(videoUrl)
+            }
             
+            addJavascriptInterface(object {
+                @android.webkit.JavascriptInterface
+                fun onVideoFound(url: String) {
+                    runOnUiThread {
+                        this@BrowserActivity.onVideoFound(url)
+                    }
+                }
+            }, "DreamWebSniffer")
+
             chromeClient = CustomWebChromeClient(
                 this@BrowserActivity,
                 binding.webViewContainer,
@@ -58,6 +91,7 @@ class BrowserActivity : AppCompatActivity() {
             ) { isFullscreen ->
                 binding.virtualCursor.visibility = if (isFullscreen) View.GONE else View.VISIBLE
                 binding.favoriteButton.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+                if (isFullscreen) binding.externalPlayerButton.visibility = View.GONE
             }
             webChromeClient = chromeClient
 
@@ -65,6 +99,45 @@ class BrowserActivity : AppCompatActivity() {
         }
         
         binding.webViewContainer.addView(webView)
+    }
+
+    private fun toggleUserAgent() {
+        webView?.let { wv ->
+            val currentUA = wv.settings.userAgentString
+            val nextUA = com.example.dreamweb.engine.UserAgentConfig.getNext(currentUA)
+            wv.settings.userAgentString = nextUA
+            wv.reload()
+            
+            val name = com.example.dreamweb.engine.UserAgentConfig.getName(nextUA)
+            android.widget.Toast.makeText(this, "Modo: $name", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun onVideoFound(videoData: String) {
+        if (videoData.startsWith("blob:")) return
+        
+        // Separar URL de Referer si existe
+        val parts = videoData.split("|REFERER|")
+        val videoUrl = parts[0]
+        
+        val urlLower = videoUrl.lowercase()
+        // Priorizar HLS (.m3u8) sobre MP4 simple
+        if (lastDetectedVideoUrl?.contains(".m3u8") == true && urlLower.contains(".mp4")) return
+
+        lastDetectedVideoUrl = videoData // Guardamos toda la cadena con el referer
+        runOnUiThread {
+            binding.externalPlayerButton.apply {
+                visibility = View.VISIBLE
+                alpha = 1.0f
+                isEnabled = true
+                bringToFront()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        VideoPlayerManager.releasePlayer(webView)
     }
 
     private fun addCurrentPageToFavorites() {
@@ -82,7 +155,12 @@ class BrowserActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val app = application as BrowserApp
         webView?.let {
-            if (app.container.dpadHandler.handleKeyEvent(event, it, binding.virtualCursor)) {
+            val nativeViews = listOf(
+                binding.favoriteButton, 
+                binding.uaToggleButton,
+                binding.externalPlayerButton
+            )
+            if (app.container.dpadHandler.handleKeyEvent(event, it, binding.virtualCursor, nativeViews)) {
                 return true
             }
         }

@@ -4,6 +4,11 @@ DreamWeb es un navegador web ultra-ligero optimizado para **Android TV**, diseñ
 
 ---
 
+## ⚠️ Estado Actual del Proyecto
+- **Reproductor Nativo / Extracción de Video:** Esta funcionalidad está en fase de desarrollo experimental. Actualmente, la extracción automática de videos y el lanzamiento del reproductor nativo **aún no funcionan correctamente**. Se está trabajando en la lógica de interceptación de flujos multimedia.
+
+---
+
 ## 1. 🚀 El Núcleo de Rendimiento Híbrido
 
 Para garantizar fluidez extrema en hardware de TV, implementamos dos estrategias clave de *offloading*:

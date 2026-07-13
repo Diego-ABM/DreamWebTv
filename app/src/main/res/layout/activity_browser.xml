@@ -28,6 +28,33 @@
         android:focusable="true"
         android:contentDescription="Añadir a favoritos" />
 
+    <ImageButton
+        android:id="@+id/uaToggleButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="80dp"
+        android:layout_marginEnd="16dp"
+        android:src="@android:drawable/ic_menu_view"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:focusable="true"
+        android:contentDescription="Cambiar User Agent" />
+
+    <ImageButton
+        android:id="@+id/externalPlayerButton"
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_gravity="center|end"
+        android:layout_marginEnd="16dp"
+        android:background="@android:drawable/toast_frame"
+        android:src="@android:drawable/ic_media_play"
+        android:scaleType="fitCenter"
+        android:padding="12dp"
+        android:visibility="gone"
+        android:focusable="true"
+        android:translationZ="25dp"
+        android:contentDescription="@string/external_player_desc" />
+
     <ImageView
         android:id="@+id/virtualCursor"
         android:layout_width="20dp"
@@ -35,7 +62,7 @@
         android:src="@android:drawable/ic_delete"
         app:tint="#FF0000"
         android:background="@android:drawable/presence_online"
-        android:translationZ="20dp"
+        android:translationZ="50dp"
         android:layout_gravity="top|start"
         android:contentDescription="Virtual Cursor" />
 </FrameLayout>
