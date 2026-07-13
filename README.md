@@ -1,47 +1,80 @@
-# DreamWeb
+# 📑 DreamWeb: Plan de Ingeniería Definitivo (v2.0)
 
-DreamWeb es un navegador web optimizado para **Android TV**, diseñado para ofrecer una experiencia de navegación fluida, rápida y segura en pantallas grandes.
+DreamWeb es un navegador web ultra-ligero optimizado para **Android TV**, diseñado para dispositivos con recursos limitados (ej. 2GB RAM) ofreciendo una experiencia premium superior a alternativas comerciales.
 
-## 🚀 Características
+---
 
-- **Optimizado para Android TV:** Interfaz diseñada específicamente para navegación con control remoto (D-Pad) y orientación horizontal (landscape).
-- **AdBlock Inteligente:** Bloqueador de anuncios nativo que utiliza **Bloom Filters** para una detección ultra-rápida con un consumo mínimo de memoria.
-- **Pre-carga de WebView:** Implementación de un pool de WebViews (`WebViewPool`) para una carga de páginas casi instantánea mediante el reciclaje de instancias.
-- **Motor de Privacidad:** Gestión centralizada de políticas de privacidad (`PrivacyEngine`) para mitigar el rastreo y mejorar la seguridad.
-- **Monitor de Rendimiento:** Sistema interno para supervisar la fluidez de la interfaz y el consumo de recursos en hardware de TV.
-- **Navegación Persistente:** Gestión de historial y marcadores optimizada con almacenamiento local.
+## 1. 🚀 El Núcleo de Rendimiento Híbrido
 
-## 🛠️ Tecnologías y Arquitectura
+Para garantizar fluidez extrema en hardware de TV, implementamos dos estrategias clave de *offloading*:
 
-- **Kotlin:** Lenguaje principal enfocado en seguridad de tipos y concisión.
-- **Android SDK:** Uso intensivo de componentes Leanback para la mejor experiencia en TV.
-- **Inyección de Dependencias Manual:** Uso de `AppContainer` para una gestión eficiente de recursos sin la sobrecarga de frameworks externos.
-- **View Binding:** Interacción segura y directa con los elementos de la interfaz de usuario.
-- **Arquitectura Limpia:** Organización por módulos de responsabilidad:
-  - `adblock/`: Lógica probabilística de filtrado.
-  - `engine/`: Core de renderizado y gestión de WebViews.
-  - `managers/`: Controladores de navegación, base de datos y eventos de entrada.
-  - `metrics/`: Telemetría de rendimiento.
+1.  **AdBlock Binario:** Descarte de peticiones de red pesadas con un algoritmo probabilístico de tiempo constante ($O(1)$) basado en **Bloom Filters**.
+2.  **Ciclo de Vida en Espejo (Video Playback):** Al detectar streaming, el motor Chromium se congela totalmente, delegando el renderizado al framework nativo del sistema (ExoPlayer).
 
-## 📦 Estructura Detallada
+---
 
-- `com.example.dreamweb.BrowserApp`: Punto de entrada que inicializa el contenedor de dependencias y la pre-carga.
-- `com.example.dreamweb.ui`:
-    - `HomeActivity`: Pantalla de inicio con accesos rápidos.
-    - `BrowserActivity`: Experiencia de navegación inmersiva.
-- `com.example.dreamweb.managers.DpadHandler`: Lógica personalizada para manejar la navegación por control remoto en páginas web complejas.
-- `com.example.dreamweb.adblock.BloomFilter`: Estructura de datos eficiente para el filtrado de dominios publicitarios.
+## 2. 🛠️ Arquitectura del Proyecto
 
-## 🛠️ Instalación y Uso
+El proyecto sigue una estructura de módulo único para maximizar la velocidad de compilación, con una separación estricta de responsabilidades:
 
-1. Clona el repositorio:
-   ```bash
-   git clone https://github.com/tu-usuario/DreamWeb.git
-   ```
-2. Abre el proyecto en **Android Studio**.
-3. Requisitos de SDK: **Android SDK 36** o superior.
-4. Configura un emulador de **Android TV** o un dispositivo físico con Android 9.0 (API 28) o superior.
-5. Ejecuta la aplicación.
+```
+📦 com.example.dreamweb
+ ├── 📄 BrowserApp.kt             <-- Configura el IdleHandler para precarga del WebView
+ ├── 📄 AppContainer.kt           <-- Inyección de dependencias manual (Service Locator)
+ ├── 📂 engine
+ │    ├── 📄 WebViewPool.kt       <-- Gestión de instancia única pre-calentada
+ │    ├── 📄 CustomWebClient.kt   <-- Interceptor de red (AdBlock + Video Sniffer)
+ │    └── 📄 CustomWebChromeClient.kt <-- Gestión de pantalla completa y video
+ ├── 📂 adblock
+ │    ├── 📄 BloomFilter.kt       <-- Matching de dominios en < 1ms
+ │    ├── 📄 PrivacyEngine.kt     <-- Inyección de JS cosmético y privacidad
+ │    └── 📄 AdBlockManager.kt    <-- Orquestador del filtrado
+ ├── 📂 player (En desarrollo)
+ │    └── 📄 NativeVideoActivity.kt <-- Reproductor ExoPlayer para Android TV
+ ├── 📂 managers
+ │    ├── 📄 BookmarkManager.kt   <-- SQLite: Favoritos con precarga
+ │    ├── 📄 HistoryManager.kt    <-- SQLite: Historial indexado
+ │    └── 📄 DpadHandler.kt       <-- Manejo de cursor virtual y scroll para remoto
+ ├── 📂 metrics
+ │    └── 📄 PerformanceMonitor.kt <-- Telemetría de FPS y estabilidad en tiempo real
+ └── 📂 ui
+      ├── 📄 HomeActivity.kt      <-- UI 100% nativa de arranque rápido
+      └── 📄 BrowserActivity.kt   <-- Contenedor dinámico del WebView Pool
+```
+
+---
+
+## 3. 🧪 Componentes Clave
+
+### A. AdBlock Pre-compilado (EasyList + EasyPrivacy)
+El motor se alimenta de un Bloom Filter pre-procesado. Si una URL coincide con el filtro, la petición se corta instantáneamente devolviendo un `WebResourceResponse` vacío, ahorrando ancho de banda y CPU.
+
+### B. Extractor Nativo de Video (Video Sniffer + ExoPlayer)
+Identificamos flujos multimedia (.m3u8, .mp4, .mpd) para lanzar una actividad nativa.
+- **Congelamiento de WebView:** Se invocan `onPause()` y `pauseTimers()` para liberar recursos durante la reproducción.
+- **Aceleración HW:** Uso de `media3-exoplayer` para decodificación eficiente en 1080p/4K.
+
+---
+
+## 🗓️ Cronograma de Construcción (Roadmap)
+
+*   **Fase 1: El Esqueleto Operativo** (Completado) - `BrowserApp`, `WebViewPool`, `AppContainer`.
+*   **Fase 2: El Escudo Inteligente** (En curso) - Integración de Bloom Filters y interceptación de red.
+*   **Fase 3: Motor de Streaming Premium** - Sniffer de video y `NativeVideoActivity`.
+*   **Fase 4: Almacenamiento Local Veloz** - SQLite para historial y marcadores.
+*   **Fase 5: Módulo de Diagnóstico** - Monitoreo de FPS y gestión de `onTrimMemory`.
+*   **Fase 6: Pulido UX** - Cursor virtual `DpadHandler` y modo oscuro forzado por JS.
+
+---
+
+## 📊 Límites Técnicos del Sistema
+
+| Parámetro | Objetivo de Diseño | Comportamiento del Sistema |
+| --- | --- | --- |
+| **Tamaño del APK** | **< 12 MB** | Incluye dependencias de Media3 y filtros binarios. |
+| **RAM en Reposo (Home)** | **≤ 60 MB** | Sin inicializar el motor Chromium. |
+| **RAM en Video Nativo** | **≤ 180 MB** | Gracias al congelamiento total del WebView. |
+| **Efectividad Bloqueo** | **~90%** | Filtrado de dominios equivalente a Brave. |
 
 ---
 Desarrollado con ❤️ para mejorar la experiencia web en la televisión.
