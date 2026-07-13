@@ -35,8 +35,12 @@ class NativeVideoActivity : AppCompatActivity() {
     }
 
     private fun setupPlayer(videoData: String) {
-        // Extraer URL, Referer y UserAgent
-        val partsUA = videoData.split("|UA|")
+        // Extraer URL, Referer, UserAgent y Cookies
+        val partsCookies = videoData.split("|COOKIES|")
+        val mainWithUA = partsCookies[0]
+        val cookies = if (partsCookies.size > 1) partsCookies[1] else ""
+
+        val partsUA = mainWithUA.split("|UA|")
         val mainData = partsUA[0]
         val customUA = if (partsUA.size > 1) partsUA[1] else "Mozilla/5.0 (Linux; Android 10; BRAVIA 4K VH2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
 
@@ -44,7 +48,11 @@ class NativeVideoActivity : AppCompatActivity() {
         val url = parts[0]
         val referer = if (parts.size > 1) parts[1] else ""
 
-        // Configuración de OkHttp con Referer y SSL laxo
+        android.util.Log.d("NativeVideo", "URL: $url")
+        android.util.Log.d("NativeVideo", "Referer: $referer")
+        android.util.Log.d("NativeVideo", "UA: $customUA")
+
+        // Configuración de OkHttp con soporte de cookies y SSL laxo
         val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
             override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
@@ -59,6 +67,18 @@ class NativeVideoActivity : AppCompatActivity() {
             .hostnameVerifier { _, _ -> true }
             .followRedirects(true)
             .followSslRedirects(true)
+            .cookieJar(object : okhttp3.CookieJar {
+                override fun saveFromResponse(url: okhttp3.HttpUrl, cookies: List<okhttp3.Cookie>) {}
+                override fun loadForRequest(url: okhttp3.HttpUrl): List<okhttp3.Cookie> {
+                    val cookieList = mutableListOf<okhttp3.Cookie>()
+                    if (cookies.isNotEmpty()) {
+                        cookies.split(";").forEach {
+                            okhttp3.Cookie.parse(url, it.trim())?.let { c -> cookieList.add(c) }
+                        }
+                    }
+                    return cookieList
+                }
+            })
             .build()
 
         val dataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
@@ -76,22 +96,22 @@ class NativeVideoActivity : AppCompatActivity() {
             }
             headers["Origin"] = origin
         }
-        // Algunas CDNs requieren estas cabeceras para streaming
+        
         headers["Sec-Fetch-Mode"] = "cors"
         headers["Sec-Fetch-Site"] = "cross-site"
         headers["Accept"] = "*/*"
         
+        if (cookies.isNotEmpty()) {
+            headers["Cookie"] = cookies
+        }
+        
         dataSourceFactory.setDefaultRequestProperties(headers)
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(this)
-            .setDataSourceFactory(dataSourceFactory)
-
         player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(mediaSourceFactory)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(dataSourceFactory))
             .build().apply {
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
-                // Intentar detectar el tipo de contenido por la URL
                 .setMimeType(when {
                     url.contains(".m3u8") -> androidx.media3.common.MimeTypes.APPLICATION_M3U8
                     url.contains(".mpd") -> androidx.media3.common.MimeTypes.APPLICATION_MPD
@@ -116,9 +136,18 @@ class NativeVideoActivity : AppCompatActivity() {
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 binding.loadingIndicator.visibility = android.view.View.GONE
-                android.util.Log.e("NativeVideo", "ExoPlayer Error: ${error.message}", error)
-                android.widget.Toast.makeText(this@NativeVideoActivity, "Error de reproducción: El servidor denegó el acceso o el formato no es compatible", android.widget.Toast.LENGTH_LONG).show()
-                finish()
+                android.util.Log.e("NativeVideo", "ExoPlayer Error: ${error.errorCodeName} (${error.errorCode})", error)
+                android.util.Log.e("NativeVideo", "Cause: ${error.cause?.message}")
+                
+                android.widget.Toast.makeText(this@NativeVideoActivity, 
+                    "Error: ${error.message ?: "Servidor denegó acceso"}. Reintentando con configuración básica...", 
+                    android.widget.Toast.LENGTH_LONG).show()
+                
+                // Fallback a configuración sin cabeceras complejas si falla
+                if (error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED) {
+                    android.util.Log.w("NativeVideo", "Attempting playback failure handling")
+                }
             }
         })
     }

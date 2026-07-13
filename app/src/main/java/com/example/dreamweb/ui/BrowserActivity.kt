@@ -42,8 +42,9 @@ class BrowserActivity : AppCompatActivity() {
             lastDetectedVideoUrl?.let { videoData ->
                 android.util.Log.d("DreamWebUI", "Launching player for: $videoData")
                 val ua = webView?.settings?.userAgentString ?: ""
-                val videoDataWithUA = "$videoData|UA|$ua"
-                VideoPlayerManager.launchPlayer(webView, videoDataWithUA)
+                val cookies = android.webkit.CookieManager.getInstance().getCookie(webView?.url) ?: ""
+                val videoDataWithExtras = "$videoData|UA|$ua|COOKIES|$cookies"
+                VideoPlayerManager.launchPlayer(webView, videoDataWithExtras)
             } ?: run {
                 android.util.Log.d("DreamWebUI", "No video URL detected yet")
                 android.widget.Toast.makeText(this, "No se ha detectado un video aún", android.widget.Toast.LENGTH_SHORT).show()
