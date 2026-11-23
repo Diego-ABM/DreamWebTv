@@ -8,7 +8,9 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.dreamweb.BrowserApp
+import com.example.dreamweb.BuildConfig
 import com.example.dreamweb.databinding.ActivityBrowserBinding
+import com.example.dreamweb.security.TlsExceptionStore
 import com.example.dreamweb.engine.CustomWebClient
 import com.example.dreamweb.engine.CustomWebChromeClient
 import com.example.dreamweb.engine.SnifferBridge
@@ -37,6 +39,15 @@ class BrowserActivity : AppCompatActivity() {
 
         binding.uaToggleButton.setOnClickListener {
             toggleUserAgent()
+        }
+
+        binding.adBlockToggleButton.setOnClickListener {
+            toggleAdBlockWhitelist()
+        }
+
+        // Contador de bloqueos: visible solo en builds DEBUG (FR-006).
+        if (BuildConfig.DEBUG) {
+            binding.adBlockCounterText.visibility = View.VISIBLE
         }
 
         binding.externalPlayerButton.setOnClickListener {
@@ -73,10 +84,14 @@ class BrowserActivity : AppCompatActivity() {
         webView = app.container.webViewPool.getWebView(this).apply {
             webViewClient = CustomWebClient(
                 app.container.adBlockManager,
-                app.container.historyManager
-            ) { videoUrl ->
-                onVideoFound(videoUrl)
-            }
+                app.container.historyManager,
+                onVideoDetected = { videoUrl ->
+                    onVideoFound(videoUrl)
+                },
+                onPageFinishedCallback = {
+                    updateAdBlockUi()
+                }
+            )
             
             snifferBridge = SnifferBridge { videoUrl ->
                 runOnUiThread {
@@ -96,6 +111,8 @@ class BrowserActivity : AppCompatActivity() {
             ) { isFullscreen ->
                 binding.virtualCursor.visibility = if (isFullscreen) View.GONE else View.VISIBLE
                 binding.favoriteButton.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+                binding.adBlockCounterText.visibility =
+                    if (isFullscreen || !BuildConfig.DEBUG) View.GONE else View.VISIBLE
                 if (isFullscreen) binding.externalPlayerButton.visibility = View.GONE
             }
             webChromeClient = chromeClient
@@ -116,6 +133,42 @@ class BrowserActivity : AppCompatActivity() {
             val name = com.example.dreamweb.engine.UserAgentConfig.getName(nextUA)
             android.widget.Toast.makeText(this, "Modo: $name", android.widget.Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** Exceptúa/rehabilita el dominio de la página actual en AdBlock. */
+    private fun toggleAdBlockWhitelist() {
+        val app = application as BrowserApp
+        val host = TlsExceptionStore.normalize(webView?.url ?: "")
+        if (host.isEmpty()) {
+            android.widget.Toast.makeText(this, "Sin página cargada", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val store = app.container.adBlockWhitelistStore
+        if (store.isExcepted(host)) {
+            store.remove(host)
+            android.widget.Toast.makeText(this, "Ads bloqueados en $host", android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            store.add(host)
+            android.widget.Toast.makeText(this, "Ads permitidos en $host", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        updateAdBlockUi()
+        webView?.reload()
+    }
+
+    /**
+     * Refresca el contador DEBUG y el estado visual del toggle según si
+     * el host de la página actual está exceptuado. Llamado desde el
+     * callback onPageFinished del WebViewClient (hilo principal).
+     */
+    private fun updateAdBlockUi() {
+        val app = application as BrowserApp
+        if (BuildConfig.DEBUG) {
+            binding.adBlockCounterText.text =
+                "Ads bloqueados: ${app.container.adBlockManager.blockedCount()}"
+        }
+        val host = TlsExceptionStore.normalize(webView?.url ?: "")
+        val excepted = host.isNotEmpty() && app.container.adBlockWhitelistStore.isExcepted(host)
+        binding.adBlockToggleButton.alpha = if (excepted) 1.0f else 0.45f
     }
 
     private fun onVideoFound(videoData: String) {
@@ -161,8 +214,9 @@ class BrowserActivity : AppCompatActivity() {
         val app = application as BrowserApp
         webView?.let {
             val nativeViews = listOf(
-                binding.favoriteButton, 
+                binding.favoriteButton,
                 binding.uaToggleButton,
+                binding.adBlockToggleButton,
                 binding.externalPlayerButton
             )
             if (app.container.dpadHandler.handleKeyEvent(event, it, binding.virtualCursor, nativeViews)) {

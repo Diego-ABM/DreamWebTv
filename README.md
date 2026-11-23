@@ -16,7 +16,7 @@ DreamWeb es un navegador web ultra-ligero optimizado para **Android TV**, diseñ
 
 Para garantizar fluidez extrema en hardware de TV, implementamos dos estrategias clave de *offloading*:
 
-1.  **AdBlock Binario:** Descarte de peticiones de red pesadas con un algoritmo probabilístico de tiempo constante ($O(1)$) basado en **Bloom Filters**.
+1.  **AdBlock Real:** Descarte de peticiones de red a dominios de ads/trackers mediante matching **exacto por sufijo de dominio** (`HashSet` sobre las reglas `||dominio^`/`@@||dominio^` de EasyList + EasyPrivacy completas — 87.059 reglas, 0% falsos positivos por construcción).
 2.  **Ciclo de Vida en Espejo (Video Playback):** Al detectar streaming, el motor Chromium se congela totalmente, delegando el renderizado al framework nativo del sistema (ExoPlayer).
 
 ---
@@ -40,9 +40,11 @@ El proyecto sigue una estructura de módulo único para maximizar la velocidad d
  │    ├── 📄 DomainTrustManager.kt <-- Delega en plataforma; bypass solo por host exceptuado
  │    └── 📄 PlayerHttpClientFactory.kt <-- OkHttpClient del player con TLS real + headers/cookies
  ├── 📂 adblock
- │    ├── 📄 BloomFilter.kt       <-- Matching de dominios en < 1ms
+ │    ├── 📄 FilterParser.kt      <-- Gramática EasyList v1: ||d^, @@||d^ (Kotlin puro)
+ │    ├── 📄 DomainMatcher.kt     <-- HashSet + suffix walk por etiquetas (< 1µs real)
+ │    ├── 📄 AdBlockWhitelistStore.kt <-- Whitelist por sitio (SharedPreferences + set volátil)
  │    ├── 📄 PrivacyEngine.kt     <-- Inyección de JS cosmético y privacidad
- │    └── 📄 AdBlockManager.kt    <-- Orquestador del filtrado
+ │    └── 📄 AdBlockManager.kt    <-- Orquestador: carga async one-shot, swap @Volatile, contador
  ├── 📂 managers
  │    ├── 📄 BookmarkManager.kt   <-- SQLite: Favoritos con precarga
  │    ├── 📄 HistoryManager.kt    <-- SQLite: Historial indexado
@@ -54,15 +56,17 @@ El proyecto sigue una estructura de módulo único para maximizar la velocidad d
       ├── 📄 HomeActivity.kt      <-- UI 100% nativa de arranque rápido (entrada "Seguridad")
       ├── 📄 BrowserActivity.kt   <-- Contenedor dinámico del WebView Pool
       ├── 📄 NativeVideoActivity.kt <-- Reproductor ExoPlayer con TLS verificado + diálogo de excepción
-      └── 📄 SecuritySettingsActivity.kt <-- Lista y revocación de excepciones TLS
+      └── 📄 SecuritySettingsActivity.kt <-- "Seguridad y privacidad": excepciones TLS + whitelist AdBlock
 ```
 
 ---
 
 ## 3. 🧪 Componentes Clave
 
-### A. AdBlock Pre-compilado (EasyList + EasyPrivacy)
-El motor se alimenta de un Bloom Filter pre-procesado. Si una URL coincide con el filtro, la petición se corta instantáneamente devolviendo un `WebResourceResponse` vacío, ahorrando ancho de banda y CPU.
+### A. AdBlock Real (EasyList + EasyPrivacy)
+El motor parsea las listas **completas** empaquetadas en `assets/filters/` (EasyList 77.781 líneas + EasyPrivacy 57.597 líneas → **87.055 dominios bloqueados + 4 excepciones**) en un hilo worker one-shot al arrancar; `shouldBlock` hace suffix walk sobre `HashSet` en **p50 ≈ 170ns / p99 ≈ 340ns** (medido en JVM host). Si el host de un recurso coincide con una regla `||dominio^`, la petición se corta devolviendo un `WebResourceResponse` vacío. Las excepciones `@@` tienen precedencia, la whitelist por sitio (`adBlockToggleButton` en el navegador + sección en "Seguridad y privacidad") se consulta antes del matcher y un contador `AtomicLong` es visible en builds DEBUG.
+
+**Medición real (23-11-2026, suite `AdBlockEffectivenessTest`):** 100% de los dominios muestreados de las reglas aceptadas bloqueados (200/200) y **0 falsos positivos** sobre 102 dominios legítimos top.
 
 ### B. Extractor Nativo de Video (Video Sniffer + ExoPlayer)
 Identificamos flujos multimedia (.m3u8, .mp4, .mpd) para lanzar una actividad nativa.
@@ -74,7 +78,7 @@ Identificamos flujos multimedia (.m3u8, .mp4, .mpd) para lanzar una actividad na
 ## 🗓️ Cronograma de Construcción (Roadmap)
 
 *   **Fase 1: El Esqueleto Operativo** (Completado) - `BrowserApp`, `WebViewPool`, `AppContainer`.
-*   **Fase 2: El Escudo Inteligente** (En curso) - Integración de Bloom Filters y interceptación de red.
+*   **Fase 2: El Escudo Inteligente** (Completado) - Motor AdBlock real: parser EasyList, matching exacto por sufijo de dominio y whitelist por sitio.
 *   **Fase 3: Motor de Streaming Premium** - Sniffer de video y `NativeVideoActivity`.
 *   **Fase 4: Almacenamiento Local Veloz** - SQLite para historial y marcadores.
 *   **Fase 5: Módulo de Diagnóstico** - Monitoreo de FPS y gestión de `onTrimMemory`.
@@ -86,10 +90,16 @@ Identificamos flujos multimedia (.m3u8, .mp4, .mpd) para lanzar una actividad na
 
 | Parámetro | Objetivo de Diseño | Comportamiento del Sistema |
 | --- | --- | --- |
-| **Tamaño del APK** | **< 12 MB** | Incluye dependencias de Media3 y filtros binarios. |
+| **Tamaño del APK** | **< 12 MB** | Medido: 16,5 MB release unsigned — **presupuesto ya excedido antes de esta feature** (~15,3 MB base); las listas añaden +1,18 MB comprimidas, dentro del impacto estimado del plan. |
 | **RAM en Reposo (Home)** | **≤ 60 MB** | Sin inicializar el motor Chromium. |
 | **RAM en Video Nativo** | **≤ 180 MB** | Gracias al congelamiento total del WebView. |
-| **Efectividad Bloqueo** | **~90%** | Filtrado de dominios equivalente a Brave. |
+| **Efectividad Bloqueo** | **100%** medido sobre las reglas de dominio aceptadas (muestra de 200, 0 FP sobre 102 dominios legítimos) | Filtrado por sufijo de dominio con EasyList + EasyPrivacy completas; no cubre ads first-party ni reglas cosméticas/de URL. |
 
 ---
+## 📜 Atribución de listas de filtros
+
+DreamWeb distribuye **EasyList** y **EasyPrivacy** completas (`app/src/main/assets/filters/`), obtenidas de las URLs canónicas de [easylist.to](https://easylist.to/) el 23-11-2026. Ambas listas son dual-licensed **GPLv3 / CC BY-SA 3.0**; este proyecto elige distribuirlas bajo **GPLv3** (texto completo en `assets/filters/LICENSE.GPLv3.txt`, procedencia y atribución en `assets/filters/NOTICE.txt`).
+
+---
+
 Desarrollado con ❤️ para mejorar la experiencia web en la televisión.

@@ -16,14 +16,17 @@ import kotlinx.coroutines.launch
 class CustomWebClient(
     private val adBlockManager: AdBlockManager,
     private val historyManager: HistoryManager,
-    private val onVideoDetected: (String) -> Unit
+    private val onVideoDetected: (String) -> Unit,
+    private val onPageFinishedCallback: () -> Unit = {}
 ) : WebViewClient() {
     private val scope = CoroutineScope(Dispatchers.Main)
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val url = request?.url?.toString() ?: return false
-        
-        if (adBlockManager.shouldBlock(url)) {
+
+        // El host destino actúa como pageHost: un dominio en whitelist
+        // navega libre; uno bloqueado se corta (research R5/decisión 6).
+        if (adBlockManager.shouldBlock(url, url)) {
             return true // Block the navigation
         }
 
@@ -68,7 +71,7 @@ class CustomWebClient(
             return WebResourceResponse("text/plain", "UTF-8", null)
         }
 
-        if (adBlockManager.shouldBlock(url)) {
+        if (adBlockManager.shouldBlock(url, view?.url)) {
             return WebResourceResponse("text/plain", "UTF-8", null)
         }
         return super.shouldInterceptRequest(view, request)
@@ -81,6 +84,9 @@ class CustomWebClient(
             injectDarkMode(it)
             injectVideoSniffer(it)
         }
+        // Hook determinista de fin de página: el contador AdBlock se
+        // refresca aquí (AtomicLong ya consistente al terminar la carga).
+        onPageFinishedCallback()
     }
 
     private fun injectVideoSniffer(webView: WebView) {

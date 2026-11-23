@@ -17,17 +17,21 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Sección "Seguridad" (FR-004): lista las excepciones TLS por dominio con su
- * fecha de aceptación, permite revocar por ítem (con confirmación) y borrar
- * todas. Navegable con D-pad, mismo patrón ViewBinding + RecyclerView que
+ * Pantalla "Seguridad y privacidad" (FR-004 + FR-008): lista las excepciones
+ * TLS por dominio con su fecha de aceptación, permite revocar por ítem (con
+ * confirmación) y borrar todas; y una segunda sección "AdBlock: dominios
+ * exceptuados" con el mismo patrón sobre `AdBlockWhitelistStore`.
+ * Navegable con D-pad, mismo patrón ViewBinding + RecyclerView que
  * HomeActivity.
  */
 class SecuritySettingsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySecuritySettingsBinding
     private lateinit var adapter: TlsExceptionAdapter
+    private lateinit var adBlockAdapter: TlsExceptionAdapter
 
     private val store by lazy { (application as BrowserApp).container.tlsExceptionStore }
+    private val adBlockStore by lazy { (application as BrowserApp).container.adBlockWhitelistStore }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,12 +44,30 @@ class SecuritySettingsActivity : AppCompatActivity() {
             this.adapter = this@SecuritySettingsActivity.adapter
         }
 
+        adBlockAdapter = TlsExceptionAdapter { host -> confirmRevokeAdBlock(host) }
+        binding.adBlockWhitelistRecyclerView.apply {
+            layoutManager = LinearLayoutManager(this@SecuritySettingsActivity)
+            this.adapter = this@SecuritySettingsActivity.adBlockAdapter
+        }
+
         binding.clearAllButton.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("Borrar excepciones TLS")
                 .setMessage("¿Eliminar todas las excepciones de certificado guardadas? Los dominios volverán a pedir confirmación.")
                 .setPositiveButton("Borrar todas") { _, _ ->
                     store.clear()
+                    reload()
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        }
+
+        binding.clearAdBlockButton.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Quitar dominios exceptuados")
+                .setMessage("¿Eliminar todos los dominios exceptuados de AdBlock? El filtrado volverá a aplicarse en esos sitios.")
+                .setPositiveButton("Quitar todos") { _, _ ->
+                    adBlockStore.clear()
                     reload()
                 }
                 .setNegativeButton("Cancelar", null)
@@ -64,6 +86,13 @@ class SecuritySettingsActivity : AppCompatActivity() {
             .map { it.key to it.value }
         adapter.submitList(items)
         binding.emptyText.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+
+        val adBlockItems = adBlockStore.list().entries
+            .sortedBy { it.key }
+            .map { it.key to it.value }
+        adBlockAdapter.submitList(adBlockItems)
+        binding.emptyAdBlockText.visibility =
+            if (adBlockItems.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun confirmRevoke(host: String) {
@@ -72,6 +101,18 @@ class SecuritySettingsActivity : AppCompatActivity() {
             .setMessage("¿Revocar la excepción TLS de \"$host\"? La próxima conexión volverá a validar el certificado.")
             .setPositiveButton("Revocar") { _, _ ->
                 store.remove(host)
+                reload()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun confirmRevokeAdBlock(host: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Quitar dominio exceptuado")
+            .setMessage("¿Quitar \"$host\" de la whitelist de AdBlock? El filtrado de anuncios volverá a aplicarse en ese sitio.")
+            .setPositiveButton("Quitar") { _, _ ->
+                adBlockStore.remove(host)
                 reload()
             }
             .setNegativeButton("Cancelar", null)

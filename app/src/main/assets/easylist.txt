@@ -1,4 +1,0 @@
-! Dummy EasyList
-doubleclick.net
-google-analytics.com
-ads.example.com

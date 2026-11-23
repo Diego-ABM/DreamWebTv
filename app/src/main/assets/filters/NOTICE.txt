@@ -1,0 +1,28 @@
+DreamWeb TV — Filter lists attribution
+======================================
+
+This directory contains the complete, unmodified filter lists:
+
+  - easylist.txt      — EasyList
+  - easyprivacy.txt   — EasyPrivacy
+
+Source (canonical URLs):
+  https://easylist.to/easylist/easylist.txt
+  https://easylist.to/easylist/easyprivacy.txt
+
+Attribution: EasyList / EasyPrivacy — easylist.to
+Homepage:    https://easylist.to/
+
+Capture date: 2026-11-23
+  EasyList     header: Version 202611230515 (see "! Version:" line inside the file)
+  EasyPrivacy  header: see "! Version:" line inside the file
+
+License
+-------
+EasyList and EasyPrivacy are dual-licensed under:
+  - GNU General Public License v3.0 (GPLv3)
+  - Creative Commons Attribution-ShareAlike 3.0 (CC BY-SA 3.0)
+as declared in https://easylist.to/pages/licence.html and the list headers.
+
+This project elects to distribute them under the GPLv3.
+The full license text is included in LICENSE.GPLv3.txt in this directory.

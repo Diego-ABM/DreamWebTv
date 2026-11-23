@@ -2,6 +2,7 @@ package com.example.dreamweb
 
 import android.content.Context
 import com.example.dreamweb.adblock.AdBlockManager
+import com.example.dreamweb.adblock.AdBlockWhitelistStore
 import com.example.dreamweb.adblock.PrivacyEngine
 import com.example.dreamweb.engine.WebViewPool
 import com.example.dreamweb.managers.BookmarkManager
@@ -12,7 +13,8 @@ import com.example.dreamweb.security.TlsExceptionStore
 
 class AppContainer(context: Context) {
     val webViewPool = WebViewPool(context)
-    val adBlockManager = AdBlockManager(context)
+    val adBlockWhitelistStore = AdBlockWhitelistStore(context)
+    val adBlockManager = AdBlockManager(context, adBlockWhitelistStore)
     val privacyEngine = PrivacyEngine()
     val historyManager = HistoryManager(context)
     val bookmarkManager = BookmarkManager(context)
