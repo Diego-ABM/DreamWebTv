@@ -102,7 +102,9 @@ ls -la app/build/outputs/apk/release/    # → < 12 MB
   (edge case "reglas insuficientes").
 - Manifiesto: `usesCleartextTraffic="true"` + comentario de justificación
   (ya declarado — auditar que persiste).
-- Auditoría: `grep -rn "glide\|leanback" app/src` → 0 usos; `libs.versions.toml`
+- Auditoría: `grep -rn "glide\|leanback" app/src/main/java` → 0 usos (el
+  manifiesto conserva `uses-feature android.software.leanback`, del SO);
+  `libs.versions.toml`
   sin entradas huérfanas; `strings.xml` sin strings del template;
   `virtualCursor` referencia `@drawable/cursor_arrow` propio.
 

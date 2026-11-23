@@ -33,14 +33,11 @@
 
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`
 - Validation iteration 1 (2026-11-23): all items pass except "No [NEEDS CLARIFICATION]
-  markers remain".
-- **FR-012** keeps one [NEEDS CLARIFICATION] marker: the source feature document
-  explicitly flags the cleartext-traffic decision as "pendiente del dueño"
-  (pending owner decision). It is security-relevant (Constitution Principle II)
-  and has two materially different scopes (global vs. per-domain network
-  security config), so it was kept as the single clarification question rather
-  than resolved by default. The manifest currently declares it globally enabled
-  with a justification comment — documented in Assumptions.
+  markers remain" — FR-012 kept one marker (cleartext scope, owner decision pending).
+- Validation iteration 2 (2026-11-23, post-clarify): **all items pass**. The FR-012
+  marker was resolved in Clarifications (Session 2026-11-23): cleartext stays
+  globally enabled (`usesCleartextTraffic="true"`) with documented justification;
+  no per-domain `networkSecurityConfig`. No [NEEDS CLARIFICATION] markers remain.
 - Technical references retained are minimal and describe existing system
   constraints or verification surfaces, not design decisions: `app/src/test/`,
   `./gradlew test`/`assembleDebug` (Constitution Principle IV quality gate),

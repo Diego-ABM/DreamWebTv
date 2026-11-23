@@ -103,7 +103,7 @@ specs/003-deuda-tecnica/
 │   ├── external-url-schemes.md   # tabla esquema→comportamiento (FR-004)
 │   └── js-sniffer-lifecycle.md   # condiciones de apagado del sondeo (FR-006)
 ├── checklists/requirements.md    # preexistente (speckit-checklist)
-└── tasks.md             # Phase 2 output (/speckit-tasks — NOT created here)
+└── tasks.md             # Phase 2 output (/speckit-tasks — T001–T037)
 ```
 
 ### Source Code (repository root)
@@ -197,7 +197,11 @@ Robolectric se reserva a lo que exige framework Android real (SQLite).
 ## Advertencias / verificaciones pendientes
 
 - **APK <12MB**: medir `assembleRelease` real; glide+leanback fuera y R8
-  deberían reducir, pero el baseline nunca se midió — quickstart E6.
+  deberían reducir. Ojo: el README ya registra una medición de **16,5 MB
+  release unsigned** tras spec 002 (incluye +1,18 MB de listas de filtros),
+  es decir, el presupuesto puede estar excedido desde el baseline — T002
+  re-mide el punto de partida de esta rama y T029 escala si no se alcanza
+  el objetivo (verificación en quickstart E6).
 - **Release manual obligado**: verificar JS bridge + HLS/DASH en el APK
   optimizado (las keep rules son la mitigación del edge case conocido).
 - **Robolectric vs compileSdk 36**: fijar `@Config(sdk = [34])` en los tests de
