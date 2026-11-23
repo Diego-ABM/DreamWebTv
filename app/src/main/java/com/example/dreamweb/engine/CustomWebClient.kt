@@ -10,6 +10,7 @@ import com.example.dreamweb.adblock.AdBlockManager
 import com.example.dreamweb.managers.HistoryManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 class CustomWebClient(
@@ -50,35 +51,9 @@ class CustomWebClient(
         request: WebResourceRequest?
     ): WebResourceResponse? {
         val url = request?.url?.toString() ?: return null
-        
-        // Video Sniffing robusto y preciso (Inspirado en Android-WebCast y Scraping-Tutorial)
-        val urlLower = url.lowercase()
-        
-        // Extensiones y patrones de video comunes
-        val isVideoFormat = urlLower.contains(".m3u8") || 
-                            urlLower.contains(".mp4") || 
-                            urlLower.contains(".mpd") || 
-                            urlLower.contains(".mkv") ||
-                            urlLower.contains(".webm") ||
-                            urlLower.contains("/manifest") ||
-                            urlLower.contains(".m3u8?") ||
-                            urlLower.contains("playlist.m3u8")
 
-        // Filtrado de segmentos (no queremos capturar cada .ts individual)
-        val isSegment = urlLower.contains(".ts") || 
-                        urlLower.contains("/segment") || 
-                        urlLower.contains("range=")
-
-        // Filtrado de publicidad común en reproductores
-        val isAdOrTracker = urlLower.contains("adsystem") || 
-                           urlLower.contains("adserver") || 
-                           urlLower.contains("analytics") || 
-                           urlLower.contains("doubleclick") || 
-                           urlLower.contains("pixel") ||
-                           urlLower.contains("googlesyndication") ||
-                           urlLower.contains("/ads/")
-
-        if (isVideoFormat && !isSegment && !isAdOrTracker) {
+        // Video Sniffing: misma heurística que el bridge JS vía VideoUrlValidator
+        if (VideoUrlValidator.isVideoUrl(url)) {
             android.util.Log.d("DreamWebSniffer", "Media file detected: $url")
             scope.launch {
                 // Capturamos el Referer y el User-Agent actual para el reproductor
@@ -177,8 +152,13 @@ class CustomWebClient(
     }
 
     private fun injectDarkMode(webView: WebView) {
-        // Implementation for older devices if needed, 
+        // Implementation for older devices if needed,
         // but for Fase 6 we focus on modern WebView Force Dark if available
         // which is set in WebSettings.
+    }
+
+    /** Cancela el scope de corrutinas — llamado por WebViewPool al reciclar. */
+    fun release() {
+        scope.cancel()
     }
 }

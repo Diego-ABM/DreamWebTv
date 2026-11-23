@@ -11,6 +11,7 @@ import com.example.dreamweb.BrowserApp
 import com.example.dreamweb.databinding.ActivityBrowserBinding
 import com.example.dreamweb.engine.CustomWebClient
 import com.example.dreamweb.engine.CustomWebChromeClient
+import com.example.dreamweb.engine.SnifferBridge
 import com.example.dreamweb.managers.VideoPlayerManager
 import kotlinx.coroutines.launch
 
@@ -18,6 +19,7 @@ class BrowserActivity : AppCompatActivity() {
     private lateinit var binding: ActivityBrowserBinding
     private var webView: WebView? = null
     private var chromeClient: CustomWebChromeClient? = null
+    private var snifferBridge: SnifferBridge? = null
     private var lastDetectedVideoUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,14 +78,16 @@ class BrowserActivity : AppCompatActivity() {
                 onVideoFound(videoUrl)
             }
             
-            addJavascriptInterface(object {
-                @android.webkit.JavascriptInterface
-                fun onVideoFound(url: String) {
-                    runOnUiThread {
-                        this@BrowserActivity.onVideoFound(url)
-                    }
+            snifferBridge = SnifferBridge { videoUrl ->
+                runOnUiThread {
+                    this@BrowserActivity.onVideoFound(videoUrl)
                 }
-            }, "DreamWebSniffer")
+            }.also { bridge ->
+                if (com.example.dreamweb.BuildConfig.DEBUG) {
+                    bridge.logger = { msg -> android.util.Log.d("DreamWebSniffer", msg) }
+                }
+                addJavascriptInterface(bridge, "DreamWebSniffer")
+            }
 
             chromeClient = CustomWebChromeClient(
                 this@BrowserActivity,
@@ -182,6 +186,10 @@ class BrowserActivity : AppCompatActivity() {
         webView?.let {
             val app = application as BrowserApp
             binding.webViewContainer.removeView(it)
+            // Anular el callback del bridge ANTES de reciclar el WebView:
+            // invocaciones JS ya encoladas se vuelven no-op de inmediato.
+            snifferBridge?.release()
+            snifferBridge = null
             app.container.webViewPool.releaseWebView(it)
             webView = null
         }

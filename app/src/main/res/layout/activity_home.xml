@@ -35,14 +35,30 @@
         <requestFocus />
     </EditText>
 
-    <Button
-        android:id="@+id/goButton"
-        android:layout_width="200dp"
+    <LinearLayout
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Navegar"
-        android:layout_marginTop="16dp"
-        android:backgroundTint="#3D5AFE"
-        android:textColor="#FFFFFF"/>
+        android:orientation="horizontal"
+        android:layout_marginTop="16dp">
+
+        <Button
+            android:id="@+id/goButton"
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
+            android:text="Navegar"
+            android:backgroundTint="#3D5AFE"
+            android:textColor="#FFFFFF"/>
+
+        <Button
+            android:id="@+id/securityButton"
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
+            android:text="Seguridad"
+            android:layout_marginStart="24dp"
+            android:focusable="true"
+            android:backgroundTint="#455A64"
+            android:textColor="#FFFFFF"/>
+    </LinearLayout>
 
     <TextView
         android:layout_width="wrap_content"

@@ -8,6 +8,7 @@ import com.example.dreamweb.managers.BookmarkManager
 import com.example.dreamweb.managers.DpadHandler
 import com.example.dreamweb.managers.HistoryManager
 import com.example.dreamweb.metrics.PerformanceMonitor
+import com.example.dreamweb.security.TlsExceptionStore
 
 class AppContainer(context: Context) {
     val webViewPool = WebViewPool(context)
@@ -17,4 +18,5 @@ class AppContainer(context: Context) {
     val bookmarkManager = BookmarkManager(context)
     val performanceMonitor = PerformanceMonitor(context)
     val dpadHandler = DpadHandler()
+    val tlsExceptionStore = TlsExceptionStore(context)
 }

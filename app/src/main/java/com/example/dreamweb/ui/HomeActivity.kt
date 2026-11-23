@@ -41,6 +41,10 @@ class HomeActivity : AppCompatActivity() {
         binding.goButton.setOnClickListener {
             navigateToBrowser(binding.searchEditText.text.toString())
         }
+
+        binding.securityButton.setOnClickListener {
+            startActivity(Intent(this, SecuritySettingsActivity::class.java))
+        }
     }
 
     override fun onResume() {

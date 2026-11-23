@@ -5,7 +5,10 @@ DreamWeb es un navegador web ultra-ligero optimizado para **Android TV**, diseñ
 ---
 
 ## ⚠️ Estado Actual del Proyecto
-- **Reproductor Nativo / Extracción de Video:** Esta funcionalidad está en fase de desarrollo experimental. Actualmente, la extracción automática de videos y el lanzamiento del reproductor nativo **aún no funcionan correctamente**. Se está trabajando en la lógica de interceptación de flujos multimedia.
+- **Reproductor Nativo / Extracción de Video:** Funcionalidad experimental. La detección por red y el bridge JS comparten el mismo validador (`VideoUrlValidator`); el lanzamiento del player nativo funciona con URLs detectadas.
+- **Seguridad (Completado):** El canal de red del reproductor valida TLS de verdad (sin trust-all). Ante un certificado inválido se muestra un diálogo que nombra el dominio; **Aceptar** guarda una excepción solo para ese dominio (persistente, revocable desde Home → "Seguridad") y reintenta el stream automáticamente. **Rechazar** cancela sin persistir.
+- **Bridge JavaScript (Completado):** `DreamWebSniffer` es una clase nombrada (`SnifferBridge`) que valida toda entrada con `VideoUrlValidator`, no retiene la Activity y se desregistra al reciclar el WebView.
+- **Tests (Completado):** Infraestructura JUnit4 en `app/src/test` ejecutable con `./gradlew test` (validador de URLs, parsing del payload del player, normalización de dominio TLS, comportamiento del bridge).
 
 ---
 
@@ -27,24 +30,31 @@ El proyecto sigue una estructura de módulo único para maximizar la velocidad d
  ├── 📄 BrowserApp.kt             <-- Configura el IdleHandler para precarga del WebView
  ├── 📄 AppContainer.kt           <-- Inyección de dependencias manual (Service Locator)
  ├── 📂 engine
- │    ├── 📄 WebViewPool.kt       <-- Gestión de instancia única pre-calentada
+ │    ├── 📄 WebViewPool.kt       <-- Gestión de instancia única pre-calentada (limpieza simétrica al reciclar)
  │    ├── 📄 CustomWebClient.kt   <-- Interceptor de red (AdBlock + Video Sniffer)
- │    └── 📄 CustomWebChromeClient.kt <-- Gestión de pantalla completa y video
+ │    ├── 📄 CustomWebChromeClient.kt <-- Gestión de pantalla completa y video
+ │    ├── 📄 VideoUrlValidator.kt <-- Heurística compartida de detección de video (http/https + patrones)
+ │    └── 📄 SnifferBridge.kt     <-- Bridge JS "DreamWebSniffer" con entrada validada, sin retener Activity
+ ├── 📂 security
+ │    ├── 📄 TlsExceptionStore.kt  <-- Excepciones TLS por dominio (SharedPreferences, revocables)
+ │    ├── 📄 DomainTrustManager.kt <-- Delega en plataforma; bypass solo por host exceptuado
+ │    └── 📄 PlayerHttpClientFactory.kt <-- OkHttpClient del player con TLS real + headers/cookies
  ├── 📂 adblock
  │    ├── 📄 BloomFilter.kt       <-- Matching de dominios en < 1ms
  │    ├── 📄 PrivacyEngine.kt     <-- Inyección de JS cosmético y privacidad
  │    └── 📄 AdBlockManager.kt    <-- Orquestador del filtrado
- ├── 📂 player (En desarrollo)
- │    └── 📄 NativeVideoActivity.kt <-- Reproductor ExoPlayer para Android TV
  ├── 📂 managers
  │    ├── 📄 BookmarkManager.kt   <-- SQLite: Favoritos con precarga
  │    ├── 📄 HistoryManager.kt    <-- SQLite: Historial indexado
+ │    ├── 📄 VideoLaunchPayload.kt <-- Parse del payload "url|REFERER|UA|COOKIES" del player
  │    └── 📄 DpadHandler.kt       <-- Manejo de cursor virtual y scroll para remoto
  ├── 📂 metrics
  │    └── 📄 PerformanceMonitor.kt <-- Telemetría de FPS y estabilidad en tiempo real
  └── 📂 ui
-      ├── 📄 HomeActivity.kt      <-- UI 100% nativa de arranque rápido
-      └── 📄 BrowserActivity.kt   <-- Contenedor dinámico del WebView Pool
+      ├── 📄 HomeActivity.kt      <-- UI 100% nativa de arranque rápido (entrada "Seguridad")
+      ├── 📄 BrowserActivity.kt   <-- Contenedor dinámico del WebView Pool
+      ├── 📄 NativeVideoActivity.kt <-- Reproductor ExoPlayer con TLS verificado + diálogo de excepción
+      └── 📄 SecuritySettingsActivity.kt <-- Lista y revocación de excepciones TLS
 ```
 
 ---

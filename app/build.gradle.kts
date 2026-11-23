@@ -28,6 +28,7 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -49,4 +50,7 @@ dependencies {
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.okhttp)
     implementation(libs.glide)
+    implementation(libs.kotlinx.coroutines.android)
+
+    testImplementation(libs.junit)
 }

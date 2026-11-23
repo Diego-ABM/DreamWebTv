@@ -6,6 +6,7 @@ import android.os.Build
 import android.view.ViewGroup
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import com.example.dreamweb.BrowserApp
 
 class WebViewPool(private val context: Context) {
@@ -57,6 +58,13 @@ class WebViewPool(private val context: Context) {
         (webView.parent as? ViewGroup)?.removeView(webView)
         webView.apply {
             stopLoading()
+            // Limpieza simétrica del ciclo de vida (FR-006, Principio V):
+            // quitar el bridge JS, cancelar el scope del client saliente y
+            // resetear ambos clients antes de reciclar el WebView.
+            removeJavascriptInterface("DreamWebSniffer")
+            (webViewClient as? CustomWebClient)?.release()
+            webViewClient = WebViewClient()
+            webChromeClient = null
             settings.userAgentString = UserAgentConfig.MOBILE_TV // Reset UA
             loadUrl("about:blank")
             clearHistory()
