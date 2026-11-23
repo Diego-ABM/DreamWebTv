@@ -8,6 +8,12 @@
 
 **Input**: User description: "Saldar la deuda técnica restante del análisis de DreamWeb no cubierta por los specs 001-security-hardening ni 002-adblock-real: bugs de UX (historial con título nulo, botón de player externo perdido al salir de fullscreen, flag de reproducción latcheado, esquemas no-http caídos al WebView), higiene y background (dependencias sin uso, monitor de rendimiento perpetuo, intervalo JS perpetuo, lifecycle del WebView no reenviado), datos (doble conexión a la misma DB, sin borrado, sin rotación de historial), manifest/build (cleartext explícito, release sin optimización, strings del template, cursor D-pad) y bootstrap de tests unitarios — cumpliendo Principios I, IV y V de la constitución."
 
+## Clarifications
+
+### Session 2026-11-23
+
+- Q: ¿El tráfico HTTP en claro se mantiene habilitado globalmente o se restringe por dominio? → A: Se mantiene habilitado globalmente (`usesCleartextTraffic="true"`) con su justificación documentada en el manifiesto; DreamWeb navega sitios arbitrarios e IPTV http legado y una restricción por dominio rompería dominios desconocidos.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Navegación sin glitches visibles (Priority: P1)
@@ -252,10 +258,8 @@ incluyendo tests de la decisión del sniffer, del parser del payload
 
 - **FR-012**: La política de tráfico en claro MUST estar declarada
   explícitamente en el manifiesto junto a su justificación (streaming http
-  legado). [NEEDS CLARIFICATION: alcance de la política — ¿se mantiene
-  habilitada globalmente como hoy, o se restringe por configuración de
-  seguridad de red a dominios concretos? El propio enunciado la marca como
-  decisión pendiente del dueño.]
+  legado); su alcance es global (habilitado para todo dominio), decisión
+  registrada en Clarifications.
 - **FR-013**: El build de release MUST tener la optimización de código
   activada, con reglas de retención que protejan las interfaces expuestas a
   JavaScript y las APIs reflexivas del reproductor; el APK resultante MUST
@@ -314,9 +318,9 @@ incluyendo tests de la decisión del sniffer, del parser del payload
 
 ## Assumptions
 
-- La declaración de tráfico en claro ya existe en el manifiesto con valor
-  habilitado y justificación por streaming http legado; la cuestión abierta es
-  su alcance (global vs. restringido por dominio), no su mera declaración.
+- La política de tráfico en claro queda habilitada globalmente con
+  justificación documentada en el manifiesto (decisión del dueño registrada en
+  Clarifications); no se introduce `networkSecurityConfig` por dominio.
 - Límite de historial por defecto propuesto: 500 entradas con rotación FIFO de
   las más antiguas; valor final a fijar y documentar en planificación.
 - El bootstrap de tests (`app/src/test/`) y parte de la cobertura ya existen
