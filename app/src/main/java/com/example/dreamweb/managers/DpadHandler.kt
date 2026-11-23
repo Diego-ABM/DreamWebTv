@@ -9,7 +9,6 @@ import android.webkit.WebView
 class DpadHandler {
     private var cursorX = -1f
     private var cursorY = -1f
-    private val step = 25f
 
     fun handleKeyEvent(event: KeyEvent, webView: WebView, cursorView: View, nativeViews: List<View> = emptyList()): Boolean {
         if (cursorX == -1f) {
@@ -18,6 +17,9 @@ class DpadHandler {
             updateCursor(cursorView, webView, nativeViews)
         }
         if (event.action == KeyEvent.ACTION_DOWN) {
+            // Aceleración por auto-repeat: repeatCount crece al mantener la
+            // tecla y vuelve a 0 al soltar/cambiar dirección (FR-015, R14)
+            val step = DpadAcceleration.stepFor(event.repeatCount)
             when (event.keyCode) {
                 KeyEvent.KEYCODE_DPAD_DOWN -> {
                     cursorY += step

@@ -12,7 +12,8 @@ class CustomWebChromeClient(
     private val activity: android.app.Activity,
     private val webViewContainer: View,
     private val fullscreenContainer: FrameLayout,
-    private val onFullscreenChanged: (Boolean) -> Unit = {}
+    private val onFullscreenChanged: (Boolean) -> Unit = {},
+    private val onReceivedTitleCallback: (url: String?, title: String?) -> Unit = { _, _ -> }
 ) : WebChromeClient() {
 
     private var customView: View? = null
@@ -35,6 +36,14 @@ class CustomWebChromeClient(
             Log.d("DreamWebConsole", "${it.message()} -- From line ${it.lineNumber()} of ${it.sourceId()}")
         }
         return super.onConsoleMessage(consoleMessage)
+    }
+
+    override fun onReceivedTitle(view: WebView?, title: String?) {
+        super.onReceivedTitle(view, title)
+        // Reenvío del título tardío al historial (FR-001, R1): cubre SPAs y
+        // títulos que llegan tras onPageFinished; addOrUpdateLatest lo hace
+        // idempotente.
+        onReceivedTitleCallback(view?.url, title)
     }
 
     override fun onShowCustomView(view: View?, requestedOrientation: Int, callback: CustomViewCallback?) {

@@ -1,12 +1,10 @@
 package com.example.dreamweb.managers
 
 import android.content.ContentValues
-import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class BookmarkManager(context: Context) {
-    private val dbHelper = DbHelper(context)
+class BookmarkManager(private val dbHelper: DbHelper) {
 
     suspend fun addBookmark(url: String, title: String?) = withContext(Dispatchers.IO) {
         val db = dbHelper.writableDatabase
@@ -18,19 +16,36 @@ class BookmarkManager(context: Context) {
         db.insert(DbHelper.TABLE_BOOKMARKS, null, values)
     }
 
+    /** Borrado individual por id (FR-010). */
+    suspend fun deleteById(id: Long) = withContext(Dispatchers.IO) {
+        dbHelper.writableDatabase.delete(
+            DbHelper.TABLE_BOOKMARKS,
+            "${DbHelper.COLUMN_ID} = ?",
+            arrayOf(id.toString())
+        )
+    }
+
     suspend fun getAllBookmarks() = withContext(Dispatchers.IO) {
         val db = dbHelper.readableDatabase
         val cursor = db.query(
             DbHelper.TABLE_BOOKMARKS,
-            arrayOf(DbHelper.COLUMN_URL, DbHelper.COLUMN_TITLE),
+            arrayOf(
+                DbHelper.COLUMN_ID, DbHelper.COLUMN_URL,
+                DbHelper.COLUMN_TITLE, DbHelper.COLUMN_TIMESTAMP
+            ),
             null, null, null, null,
             "${DbHelper.COLUMN_TITLE} ASC"
         )
-        val bookmarks = mutableListOf<Pair<String, String>>()
+        val bookmarks = mutableListOf<Bookmark>()
         while (cursor.moveToNext()) {
-            val url = cursor.getString(0)
-            val title = cursor.getString(1) ?: ""
-            bookmarks.add(url to title)
+            bookmarks.add(
+                Bookmark(
+                    id = cursor.getLong(0),
+                    url = cursor.getString(1),
+                    title = cursor.getString(2) ?: "",
+                    timestamp = cursor.getLong(3)
+                )
+            )
         }
         cursor.close()
         bookmarks

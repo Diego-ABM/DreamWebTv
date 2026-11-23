@@ -90,7 +90,7 @@ Identificamos flujos multimedia (.m3u8, .mp4, .mpd) para lanzar una actividad na
 
 | Parámetro | Objetivo de Diseño | Comportamiento del Sistema |
 | --- | --- | --- |
-| **Tamaño del APK** | **< 12 MB** | Medido: 16,5 MB release unsigned — **presupuesto ya excedido antes de esta feature** (~15,3 MB base); las listas añaden +1,18 MB comprimidas, dentro del impacto estimado del plan. |
+| **Tamaño del APK** | **< 12 MB** | **Medido: 3,96 MB (3.958.273 B) release unsigned** tras `optimization.enable=true` (R8 + resource shrinking), eliminación de `glide`/`androidx-leanback` y purge de recursos del template — presupuesto cumplido (baseline previo a la feature 003: 16,5 MB). |
 | **RAM en Reposo (Home)** | **≤ 60 MB** | Sin inicializar el motor Chromium. |
 | **RAM en Video Nativo** | **≤ 180 MB** | Gracias al congelamiento total del WebView. |
 | **Efectividad Bloqueo** | **100%** medido sobre las reglas de dominio aceptadas (muestra de 200, 0 FP sobre 102 dominios legítimos) | Filtrado por sufijo de dominio con EasyList + EasyPrivacy completas; no cubre ads first-party ni reglas cosméticas/de URL. |

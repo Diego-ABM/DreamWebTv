@@ -6,6 +6,7 @@ import com.example.dreamweb.adblock.AdBlockWhitelistStore
 import com.example.dreamweb.adblock.PrivacyEngine
 import com.example.dreamweb.engine.WebViewPool
 import com.example.dreamweb.managers.BookmarkManager
+import com.example.dreamweb.managers.DbHelper
 import com.example.dreamweb.managers.DpadHandler
 import com.example.dreamweb.managers.HistoryManager
 import com.example.dreamweb.metrics.PerformanceMonitor
@@ -16,8 +17,10 @@ class AppContainer(context: Context) {
     val adBlockWhitelistStore = AdBlockWhitelistStore(context)
     val adBlockManager = AdBlockManager(context, adBlockWhitelistStore)
     val privacyEngine = PrivacyEngine()
-    val historyManager = HistoryManager(context)
-    val bookmarkManager = BookmarkManager(context)
+    // Un solo DbHelper = una sola conexión SQLite compartida (FR-009, R8)
+    val dbHelper = DbHelper(context)
+    val historyManager = HistoryManager(dbHelper)
+    val bookmarkManager = BookmarkManager(dbHelper)
     val performanceMonitor = PerformanceMonitor(context)
     val dpadHandler = DpadHandler()
     val tlsExceptionStore = TlsExceptionStore(context)

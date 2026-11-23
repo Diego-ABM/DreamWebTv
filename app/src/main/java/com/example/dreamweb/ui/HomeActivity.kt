@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -14,6 +15,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.dreamweb.BrowserApp
 import com.example.dreamweb.R
 import com.example.dreamweb.databinding.ActivityHomeBinding
+import com.example.dreamweb.managers.Bookmark
+import com.example.dreamweb.managers.HistoryEntry
 import kotlinx.coroutines.launch
 
 class HomeActivity : AppCompatActivity() {
@@ -54,9 +57,10 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun setupHistoryList() {
-        historyAdapter = HistoryAdapter { url ->
-            navigateToBrowser(url)
-        }
+        historyAdapter = HistoryAdapter(
+            onClick = { url -> navigateToBrowser(url) },
+            onLongClick = { entry -> deleteHistoryEntry(entry) }
+        )
         binding.historyRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@HomeActivity)
             adapter = historyAdapter
@@ -64,9 +68,10 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun setupFavoritesList() {
-        favoritesAdapter = FavoritesAdapter { url ->
-            navigateToBrowser(url)
-        }
+        favoritesAdapter = FavoritesAdapter(
+            onClick = { url -> navigateToBrowser(url) },
+            onLongClick = { bookmark -> deleteBookmark(bookmark) }
+        )
         binding.favoritesRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@HomeActivity, LinearLayoutManager.HORIZONTAL, false)
             adapter = favoritesAdapter
@@ -89,6 +94,25 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    /** Borrado individual por id (FR-010): long-press DPAD_CENTER → deleteById + refresh. */
+    private fun deleteHistoryEntry(entry: HistoryEntry) {
+        val app = application as BrowserApp
+        lifecycleScope.launch {
+            app.container.historyManager.deleteById(entry.id)
+            Toast.makeText(this@HomeActivity, "Entrada eliminada del historial", Toast.LENGTH_SHORT).show()
+            loadHistory()
+        }
+    }
+
+    private fun deleteBookmark(bookmark: Bookmark) {
+        val app = application as BrowserApp
+        lifecycleScope.launch {
+            app.container.bookmarkManager.deleteById(bookmark.id)
+            Toast.makeText(this@HomeActivity, "Favorito eliminado", Toast.LENGTH_SHORT).show()
+            loadBookmarks()
+        }
+    }
+
     private fun navigateToBrowser(url: String) {
         val trimmedUrl = url.trim()
         if (trimmedUrl.isNotBlank()) {
@@ -104,12 +128,14 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
-    class HistoryAdapter(private val onClick: (String) -> Unit) :
-        RecyclerView.Adapter<HistoryAdapter.ViewHolder>() {
-        
-        private var items = listOf<Pair<String, String>>()
+    class HistoryAdapter(
+        private val onClick: (String) -> Unit,
+        private val onLongClick: (HistoryEntry) -> Unit
+    ) : RecyclerView.Adapter<HistoryAdapter.ViewHolder>() {
 
-        fun submitList(newList: List<Pair<String, String>>) {
+        private var items = listOf<HistoryEntry>()
+
+        fun submitList(newList: List<HistoryEntry>) {
             items = newList
             notifyDataSetChanged()
         }
@@ -121,8 +147,7 @@ class HomeActivity : AppCompatActivity() {
         }
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-            val item = items[position]
-            holder.bind(item, onClick)
+            holder.bind(items[position], onClick, onLongClick)
         }
 
         override fun getItemCount() = items.size
@@ -131,20 +156,27 @@ class HomeActivity : AppCompatActivity() {
             private val titleText: TextView = view.findViewById(R.id.titleText)
             private val urlText: TextView = view.findViewById(R.id.urlText)
 
-            fun bind(item: Pair<String, String>, onClick: (String) -> Unit) {
-                titleText.text = if (item.second.isBlank()) item.first else item.second
-                urlText.text = item.first
-                itemView.setOnClickListener { onClick(item.first) }
+            fun bind(item: HistoryEntry, onClick: (String) -> Unit, onLongClick: (HistoryEntry) -> Unit) {
+                titleText.text = item.title.ifBlank { item.url }
+                urlText.text = item.url
+                itemView.setOnClickListener { onClick(item.url) }
+                // Long-press (DPAD_CENTER mantenido) → borrado individual
+                itemView.setOnLongClickListener {
+                    onLongClick(item)
+                    true
+                }
             }
         }
     }
 
-    class FavoritesAdapter(private val onClick: (String) -> Unit) :
-        RecyclerView.Adapter<FavoritesAdapter.ViewHolder>() {
+    class FavoritesAdapter(
+        private val onClick: (String) -> Unit,
+        private val onLongClick: (Bookmark) -> Unit
+    ) : RecyclerView.Adapter<FavoritesAdapter.ViewHolder>() {
 
-        private var items = listOf<Pair<String, String>>()
+        private var items = listOf<Bookmark>()
 
-        fun submitList(newList: List<Pair<String, String>>) {
+        fun submitList(newList: List<Bookmark>) {
             items = newList
             notifyDataSetChanged()
         }
@@ -156,8 +188,7 @@ class HomeActivity : AppCompatActivity() {
         }
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-            val item = items[position]
-            holder.bind(item, onClick)
+            holder.bind(items[position], onClick, onLongClick)
         }
 
         override fun getItemCount() = items.size
@@ -165,9 +196,13 @@ class HomeActivity : AppCompatActivity() {
         class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
             private val titleText: TextView = view.findViewById(R.id.titleText)
 
-            fun bind(item: Pair<String, String>, onClick: (String) -> Unit) {
-                titleText.text = if (item.second.isBlank()) item.first else item.second
-                itemView.setOnClickListener { onClick(item.first) }
+            fun bind(item: Bookmark, onClick: (String) -> Unit, onLongClick: (Bookmark) -> Unit) {
+                titleText.text = item.title.ifBlank { item.url }
+                itemView.setOnClickListener { onClick(item.url) }
+                itemView.setOnLongClickListener {
+                    onLongClick(item)
+                    true
+                }
             }
         }
     }

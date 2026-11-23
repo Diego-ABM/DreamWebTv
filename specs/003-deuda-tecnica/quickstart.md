@@ -125,3 +125,34 @@ paso base. `DpadAccelerationTest` cubre la curva (monótona, tope, reseteo).
 | SC-006 datos consistentes | E5 |
 | SC-007 APK <12MB + auditoría | E6 |
 | SC-008 build + test verdes | E0 |
+
+---
+
+## Notas de validación — ejecución de implementación (23-11-2026)
+
+Validación automatizada completada en la rama `003-deuda-tecnica`. Los
+escenarios marcados **[manual]** quedan pendientes de ejecución en
+dispositivo/emulador Android TV por el usuario.
+
+| Criterio | Estado | Evidencia |
+|---|---|---|
+| SC-008 (E0) build + test verdes | ✅ Verificado | `assembleDebug` + `test` BUILD SUCCESSFUL; suite = 8 tests existentes + `HistoryManagerTest` (8), `BookmarkManagerTest` (3), `ExternalUrlClassifierTest` (6), `DpadAccelerationTest` (5) — 0 fallos |
+| SC-001 (E1) historial con título + dedup | ✅ Parcialmente verificado en dispositivo | En Android TV real (adb): navegación a `https://www.iana.org/` → fila única con título definitivo "Internet Assigned Numbers Authority" (registrado desde `onPageFinished`). Dedup consecutiva y no-dedup A-B-A cubiertos por `HistoryManagerTest` |
+| SC-002/003 (E3) botón externo + latch | ⏳ Manual | Implementado (invalidación por navegación + restauración condicionada + latch tras validar contexto); los ciclos fullscreen requieren observación humana |
+| SC-004 (E2) esquemas externos | ✅ Automatizado / ⏳ manual | Tabla completa cubierta por `ExternalUrlClassifierTest`; resolución intents/fallback/Toast pendiente de E2 en dispositivo |
+| SC-005 (E3.5/E4) cero background | ✅ Parcialmente verificado en dispositivo | En dispositivo real DEBUG: monitor emite "System RAM" cada 5 s en foreground → `KEYCODE_HOME` → **0 logs durante 13 s en background** (stop vía contador foreground) → al reanudar vuelve a emitir. Sniffer con `clearInterval` + backstop 120 s implementado (verificación logcat de sondeo pendiente) |
+| SC-006 (E5) datos consistentes | ✅ Verificado | `HistoryManagerTest`: rotación FIFO 500 con 505 inserciones, `deleteById`; `BookmarkManagerTest`: add/delete/orden; `AppContainer` inyecta un único `DbHelper`. Long-press manual pendiente de verificación humana |
+| SC-007 (E6) APK <12MB + auditoría | ✅ Verificado | **APK release unsigned = 3.958.269 B (3,77 MiB / 3,96 MB)** vs baseline 16.515.077 B — mejora del 76 %. Auditoría: 0 refs glide/leanback en `app/src/main/java`, catálogo sin entradas huérfanas, cleartext + `uses-feature leanback` conservados en manifiesto. Keep rules confirmadas en el DEX (`SnifferBridge`, `HlsMediaSource$Factory`, `DashMediaSource$Factory`) |
+| SC-007/E6 verificación manual release | ⏳ Pendiente | El APK release es **unsigned** (sin `signingConfig`) → no instalable en dispositivo tal cual; requiere firma. Con APK firmado: confirmar JS bridge + HLS/DASH (edge case conocido) |
+| E7 aceleración D-pad | ✅ Automatizado / ⏳ manual | Curva cubierta por `DpadAccelerationTest` (25→150px, tope, reseteo); sensación en D-pad real pendiente |
+
+**Nota**: `assembleRelease` requiere `android.r8.gradual.support=true` en
+`gradle.properties` (flag experimental exigido por AGP 9.2.1 para el DSL
+`optimization{}`; añadido en esta feature).
+
+**Bug adicional encontrado en validación en dispositivo**: `view?.url` dentro
+de `shouldInterceptRequest` (hilo worker de Chromium) lanzaba la excepción de
+thread de WebView y **mataba el proceso** al navegar en la WebView del
+dispositivo de prueba — bug preexistente (línea original del spec 002).
+Corregido cacheando `lastPageUrl` en `onPageStarted` (main thread) y usándolo
+como pageHost del check AdBlock.

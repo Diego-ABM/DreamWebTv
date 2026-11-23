@@ -90,6 +90,11 @@ class BrowserActivity : AppCompatActivity() {
                 },
                 onPageFinishedCallback = {
                     updateAdBlockUi()
+                },
+                onPageStartedCallback = {
+                    // Navegación de main-frame → el video vigente se invalida (R3)
+                    lastDetectedVideoUrl = null
+                    binding.externalPlayerButton.visibility = View.GONE
                 }
             )
             
@@ -107,14 +112,26 @@ class BrowserActivity : AppCompatActivity() {
             chromeClient = CustomWebChromeClient(
                 this@BrowserActivity,
                 binding.webViewContainer,
-                binding.fullscreenContainer
-            ) { isFullscreen ->
-                binding.virtualCursor.visibility = if (isFullscreen) View.GONE else View.VISIBLE
-                binding.favoriteButton.visibility = if (isFullscreen) View.GONE else View.VISIBLE
-                binding.adBlockCounterText.visibility =
-                    if (isFullscreen || !BuildConfig.DEBUG) View.GONE else View.VISIBLE
-                if (isFullscreen) binding.externalPlayerButton.visibility = View.GONE
-            }
+                binding.fullscreenContainer,
+                onFullscreenChanged = { isFullscreen ->
+                    binding.virtualCursor.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+                    binding.favoriteButton.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+                    binding.adBlockCounterText.visibility =
+                        if (isFullscreen || !BuildConfig.DEBUG) View.GONE else View.VISIBLE
+                    // Restauración condicionada: solo reaparece si el video
+                    // sigue vigente en la página actual (FR-002, R3)
+                    binding.externalPlayerButton.visibility =
+                        if (isFullscreen || lastDetectedVideoUrl == null) View.GONE else View.VISIBLE
+                },
+                onReceivedTitleCallback = { titleUrl, title ->
+                    // Título tardío (SPA / title post-onPageFinished) → upsert
+                    if (!titleUrl.isNullOrBlank() && titleUrl != "about:blank") {
+                        lifecycleScope.launch {
+                            app.container.historyManager.addOrUpdateLatest(titleUrl, title)
+                        }
+                    }
+                }
+            )
             webChromeClient = chromeClient
 
             loadUrl(url)
@@ -193,8 +210,16 @@ class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        // Pausa de la vista (barato, simétrico). pauseTimers() queda
+        // exclusivamente en el offloading al player nativo (FR-007, R7).
+        webView?.onPause()
+    }
+
     override fun onResume() {
         super.onResume()
+        webView?.onResume()
         VideoPlayerManager.releasePlayer(webView)
     }
 
