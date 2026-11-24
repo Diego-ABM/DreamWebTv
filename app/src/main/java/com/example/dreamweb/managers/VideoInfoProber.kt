@@ -2,6 +2,7 @@ package com.example.dreamweb.managers
 
 import com.example.dreamweb.engine.Rendition
 import com.example.dreamweb.engine.StreamFormat
+import com.example.dreamweb.engine.streamFormatOf
 import com.example.dreamweb.engine.AUTO_RESOLUTION_LABEL
 import com.example.dreamweb.engine.VideoFinding
 import com.example.dreamweb.security.PlayerHttpClientFactory
@@ -61,7 +62,9 @@ class VideoInfoProber(private val clientFactory: PlayerHttpClientFactory) {
             headers = finding.headers
         )
         val client = clientFactory.createClient(payload)
-        val isManifest = url.lowercase().contains(".m3u8")
+        // Manifiesto HLS en cualquier forma (.m3u8 y también /m3u8/<id> sin
+        // extensión, patrón usual de proxies de streaming).
+        val isManifest = streamFormatOf(url, null) == StreamFormat.HLS
 
         val requestHeaders = clientFactory.mergedRequestHeaders(payload)
             .plus("User-Agent" to payload.userAgent)

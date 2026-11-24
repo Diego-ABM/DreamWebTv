@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.example.dreamweb.BrowserApp
 import com.example.dreamweb.BuildConfig
+import com.example.dreamweb.engine.streamFormatOf
 import com.example.dreamweb.databinding.ActivityNativeVideoBinding
 import com.example.dreamweb.managers.VideoLaunchPayload
 import com.example.dreamweb.security.PlayerHttpClientFactory
@@ -129,10 +130,15 @@ class NativeVideoActivity : AppCompatActivity() {
         val builder = MediaItem.Builder()
             .setUri(payload.url)
             .setMimeType(
-                payload.mimeType ?: when {
-                    payload.url.contains(".m3u8") -> MimeTypes.APPLICATION_M3U8
-                    payload.url.contains(".mpd") -> MimeTypes.APPLICATION_MPD
-                    else -> null
+                // El formato derivado de la URL gana: selecciona el
+                // MediaSource correcto (HLS/DASH) incluso si el mime del
+                // payload usa una variante no mapeable (p. ej.
+                // "application/vnd.apple.mpegurl"). El mime del payload
+                // solo se propaga para formatos progresivos/otros.
+                when (streamFormatOf(payload.url, payload.mimeType)) {
+                    com.example.dreamweb.engine.StreamFormat.HLS -> MimeTypes.APPLICATION_M3U8
+                    com.example.dreamweb.engine.StreamFormat.DASH -> MimeTypes.APPLICATION_MPD
+                    else -> payload.mimeType
                 }
             )
 

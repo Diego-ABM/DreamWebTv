@@ -49,7 +49,12 @@ class PlayerHttpClientFactory(store: TlsExceptionStore) {
             headers["Origin"] = deriveOrigin(payload.referer)
         }
         headers["Sec-Fetch-Mode"] = "cors"
-        headers["Sec-Fetch-Site"] = "cross-site"
+        // Sec-Fetch-Site real: servidores/CDNs (p. ej. Cloudflare en
+        // player.zilla-networks.com) rechazan cross-site cuando la petición
+        // original sale del propio iframe del player — derivar del par
+        // url del stream vs referer.
+        headers["Sec-Fetch-Site"] = secFetchSite(payload.url, payload.referer)
+        headers["Sec-Fetch-Dest"] = "empty"
         headers["Accept"] = "*/*"
         if (payload.cookies.isNotEmpty()) {
             headers["Cookie"] = payload.cookies
@@ -99,5 +104,34 @@ class PlayerHttpClientFactory(store: TlsExceptionStore) {
         "${uri.scheme}://${uri.host}"
     } catch (ignored: Exception) {
         referer
+    }
+
+    /**
+     * Sec-Fetch-Site del fetch de medios, igual que lo emitiría la página:
+     * `same-origin` si host+esquema coinciden (stream servido por el propio
+     * host del player iframe), `same-site` para el mismo dominio
+     * registrable (aprox. últimas 2 etiquetas), `cross-site` en otro caso.
+     */
+    internal fun secFetchSite(streamUrl: String, referer: String): String {
+        if (referer.isEmpty()) return "cross-site"
+        return try {
+            val s = Uri.parse(streamUrl)
+            val r = Uri.parse(referer)
+            val sh = s.host?.lowercase() ?: return "cross-site"
+            val rh = r.host?.lowercase() ?: return "cross-site"
+            when {
+                sh == rh && s.scheme.equals(r.scheme, ignoreCase = true) -> "same-origin"
+                registrableDomain(sh) == registrableDomain(rh) -> "same-site"
+                else -> "cross-site"
+            }
+        } catch (e: Exception) {
+            "cross-site"
+        }
+    }
+
+    /** Aproximación eTLD+1: últimas dos etiquetas (suficiente para el hint). */
+    private fun registrableDomain(host: String): String {
+        val labels = host.split('.')
+        return if (labels.size <= 2) host else labels.takeLast(2).joinToString(".")
     }
 }

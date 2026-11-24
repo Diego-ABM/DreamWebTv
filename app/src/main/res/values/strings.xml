@@ -3,6 +3,7 @@
     <string name="external_player_desc">Ver en reproductor externo</string>
     <string name="video_indicator_desc">Videos detectados en la página</string>
     <string name="findings_panel_title">Videos detectados</string>
+    <string name="fullscreen_hint_label">▶ Ver en pantalla completa</string>
     <string name="quality_prefix">▸ Calidad:&#160;</string>
     <string name="subtitles_line">subtítulos: %1$s</string>
 </resources>

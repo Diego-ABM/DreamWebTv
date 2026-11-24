@@ -67,7 +67,8 @@ class PlayerHttpClientFactoryTest {
         assertEquals("https://site.example.com", merged["Origin"])
         assertEquals("session=real", merged["Cookie"])
         assertEquals("cors", merged["Sec-Fetch-Mode"])
-        assertEquals("cross-site", merged["Sec-Fetch-Site"])
+        // site.example.com → cdn.example.com comparten dominio registrable
+        assertEquals("same-site", merged["Sec-Fetch-Site"])
         assertFalse(merged.containsKey("Host"))
         assertFalse(merged.containsKey("Content-Length"))
         assertFalse(merged.containsKey("Range"))
@@ -88,8 +89,35 @@ class PlayerHttpClientFactoryTest {
     fun `fixed fetch headers are always present`() {
         val merged = factory().mergedRequestHeaders(payload())
         assertEquals("cors", merged["Sec-Fetch-Mode"])
-        assertEquals("cross-site", merged["Sec-Fetch-Site"])
+        assertEquals("cross-site", merged["Sec-Fetch-Site"]) // sin referer
+        assertEquals("empty", merged["Sec-Fetch-Dest"])
         assertEquals("*/*", merged["Accept"])
+    }
+
+    @Test
+    fun `Sec-Fetch-Site derives from stream url vs referer`() {
+        val f = factory()
+        // Stream en el mismo host+esquema que el player iframe → same-origin
+        // (caso real player.zilla-networks.com: el CDN rechaza cross-site).
+        assertEquals("same-origin", f.secFetchSite(
+            "https://player.zilla-networks.com/m3u8/abc",
+            "https://player.zilla-networks.com/play/abc"
+        ))
+        // Mismo dominio registrable, host distinto → same-site
+        assertEquals("same-site", f.secFetchSite(
+            "https://cdn.example.com/v/x.m3u8",
+            "https://site.example.com/watch"
+        ))
+        // Dominios distintos → cross-site
+        assertEquals("cross-site", f.secFetchSite(
+            "https://cdn.otro.net/v/x.m3u8",
+            "https://site.example.com/watch"
+        ))
+        // Esquema distinto en el mismo host no es same-origin
+        assertEquals("same-site", f.secFetchSite(
+            "http://player.zilla-networks.com/m3u8/abc",
+            "https://player.zilla-networks.com/play/abc"
+        ))
     }
 
     @Test

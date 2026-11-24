@@ -23,6 +23,7 @@ object VideoReportParser {
     const val MAX_SUBTITLES = 8
     const val MIN_DIMENSION = 16
     const val MAX_DIMENSION = 8192
+    private const val MAX_COORD = 100_000.0
 
     /** Log opcional de rechazos (asignar solo en builds DEBUG). */
     var logger: ((String) -> Unit)? = null
@@ -35,7 +36,7 @@ object VideoReportParser {
         "user-agent", "referer", "cookie", "origin"
     )
 
-    fun parse(json: String, fallbackPageUrl: String = ""): VideoReport? {
+    fun parse(json: String, fallbackPageUrl: String = ""): ParsedMessage? {
         // 1. Tamaño y forma
         if (json.length > MAX_PAYLOAD_BYTES ||
             json.toByteArray(Charsets.UTF_8).size > MAX_PAYLOAD_BYTES) {
@@ -49,9 +50,17 @@ object VideoReportParser {
             return null
         }
 
-        // 2. url obligatoria y validada por la frontera compartida
+        // Mensajes de estado del elemento (playstate) no llevan url.
+        if (optString(obj, "type") == "playstate") {
+            return parsePlayState(obj, fallbackPageUrl)
+        }
+
+        // 2. url obligatoria. La frontera DOM no exige patrón de formato:
+        // el contexto del elemento/player ya es evidencia de medio y los
+        // streams reales llegan muchas veces sin extensión (p. ej.
+        // `/m3u8/<id>`). Siguen aplicando http(s) + filtros segmento/ads.
         val url = optString(obj, "url")
-        if (url == null || !VideoUrlValidator.isVideoUrl(url)) {
+        if (url == null || !VideoUrlValidator.isDomMediaUrl(url)) {
             log("report discarded: url rejected")
             return null
         }
@@ -114,6 +123,50 @@ object VideoReportParser {
             subtitles = subtitles,
             mediaKey = mediaKey,
             source = DetectionSource.DOM
+        )
+    }
+
+    /**
+     * Parse del mensaje `type:"playstate"`: estado del `<video>` que suena.
+     * Campos acotados con las mismas reglas de tipo/rango que el reporte;
+     * `rect` solo se acepta completo y con tamaño positivo.
+     */
+    private fun parsePlayState(obj: JSONObject, fallbackPageUrl: String): PlayState? {
+        val playing = obj.opt("playing") as? Boolean
+        if (playing == null) {
+            log("playstate discarded: missing playing flag")
+            return null
+        }
+
+        val rawPageUrl = optString(obj, "pageUrl")
+        val pageUrl = if (rawPageUrl != null && VideoUrlValidator.isHttpUrl(rawPageUrl)) {
+            rawPageUrl
+        } else {
+            fallbackPageUrl
+        }
+
+        val rect = obj.optJSONObject("rect")?.let { r ->
+            val x = optDouble(r, "x")
+            val y = optDouble(r, "y")
+            val w = optDouble(r, "w")
+            val h = optDouble(r, "h")
+            if (x != null && y != null && w != null && h != null &&
+                w > 0 && h > 0 &&
+                x in -MAX_COORD..MAX_COORD && y in -MAX_COORD..MAX_COORD &&
+                w <= MAX_COORD && h <= MAX_COORD
+            ) {
+                ElementRect(x, y, w, h)
+            } else null
+        }
+
+        return PlayState(
+            playing = playing,
+            mediaKey = optString(obj, "mediaKey"),
+            rect = rect,
+            viewportWidth = optInt(obj, "vw")?.takeIf { it in 1..MAX_DIMENSION },
+            viewportHeight = optInt(obj, "vh")?.takeIf { it in 1..MAX_DIMENSION },
+            inIframe = (obj.opt("inIframe") as? Boolean) ?: false,
+            pageUrl = pageUrl
         )
     }
 

@@ -116,6 +116,29 @@
         </LinearLayout>
     </FrameLayout>
 
+    <!-- Hint "ver en pantalla completa": pill sobre el video que suena
+         (paridad BrowseHere). Aparece cuando el detector reporta playstate
+         playing y existe al menos un hallazgo lanzable. Bajo el cursor
+         virtual (50dp); encima del webView. -->
+    <Button
+        android:id="@+id/fullscreenHintButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="72dp"
+        android:background="@android:drawable/toast_frame"
+        android:paddingLeft="20dp"
+        android:paddingTop="10dp"
+        android:paddingRight="20dp"
+        android:paddingBottom="10dp"
+        android:text="@string/fullscreen_hint_label"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:visibility="gone"
+        android:focusable="true"
+        android:translationZ="45dp"
+        android:contentDescription="@string/fullscreen_hint_label" />
+
     <ImageView
         android:id="@+id/virtualCursor"
         android:layout_width="24dp"

@@ -18,13 +18,13 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class SnifferBridgeTest {
 
-    private var received: VideoReport? = null
+    private var received: ParsedMessage? = null
     private lateinit var bridge: SnifferBridge
 
     @Before
     fun setUp() {
         received = null
-        bridge = SnifferBridge { report -> received = report }
+        bridge = SnifferBridge { msg -> received = msg }
         bridge.currentPageUrl = "https://site.example.com/current"
     }
 
@@ -33,10 +33,33 @@ class SnifferBridgeTest {
         bridge.onVideoFound(
             """{"url":"https://cdn.example.com/live/master.m3u8","pageUrl":"https://site.example.com/p","title":"Ep","mediaKey":"v1"}"""
         )
-        assertNotNull(received)
-        assertEquals("https://cdn.example.com/live/master.m3u8", received!!.url)
-        assertEquals("Ep", received!!.title)
-        assertEquals("v1", received!!.mediaKey)
+        val r = received as? VideoReport
+        assertNotNull(r)
+        assertEquals("https://cdn.example.com/live/master.m3u8", r!!.url)
+        assertEquals("Ep", r.title)
+        assertEquals("v1", r.mediaKey)
+    }
+
+    @Test
+    fun `opaque media url without extension invokes callback`() {
+        // Caso real: players que sirven el manifiesto como /m3u8/<id> sin
+        // extensión literal (player.zilla-networks.com).
+        bridge.onVideoFound(
+            """{"url":"https://player.zilla-networks.com/m3u8/1a2b3c","pageUrl":"https://e.com"}"""
+        )
+        assertNotNull(received as? VideoReport)
+    }
+
+    @Test
+    fun `playstate message invokes callback as PlayState`() {
+        bridge.onVideoFound(
+            """{"type":"playstate","playing":true,"mediaKey":"v1","inIframe":true,"pageUrl":"https://e.com"}"""
+        )
+        val s = received as? PlayState
+        assertNotNull(s)
+        assertEquals(true, s!!.playing)
+        assertEquals("v1", s.mediaKey)
+        assertEquals(true, s.inIframe)
     }
 
     @Test

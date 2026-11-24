@@ -19,7 +19,7 @@ import android.webkit.JavascriptInterface
  * `webView.url`): es el referer de respaldo cuando el reporte trae una
  * `pageUrl` ausente o no-http.
  */
-class SnifferBridge(private var onVideoFound: ((VideoReport) -> Unit)?) {
+class SnifferBridge(private var onVideoFound: ((ParsedMessage) -> Unit)?) {
 
     /** Log opcional de rechazos (asignar en debug, p.ej. Log::d). */
     var logger: ((String) -> Unit)? = null

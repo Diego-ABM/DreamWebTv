@@ -6,6 +6,9 @@ package com.example.dreamweb.engine
  * vive en [VideoReportParser], [VideoFindingsRegistry] y [SubtitleTrackFilter].
  */
 
+/** Mensaje validado del bridge JS: reporte de stream o estado del elemento. */
+sealed interface ParsedMessage
+
 /** Reporte crudo JS→Kotlin (o red→Kotlin), ya sanitizado por el parser. */
 data class VideoReport(
     val url: String,                                 // URL del stream (validada por VideoUrlValidator)
@@ -21,7 +24,26 @@ data class VideoReport(
     val subtitles: List<SubtitleTrack> = emptyList(),// ≤8 tras SubtitleTrackFilter
     val mediaKey: String? = null,                    // id por elemento <video> generado por el script
     val source: DetectionSource                      // DOM | NETWORK (trazabilidad debug)
-)
+) : ParsedMessage
+
+/**
+ * Estado de reproducción de un elemento `<video>` en la página (mensaje
+ * `type:"playstate"` del detector). No transporta URL: el elemento que
+ * suena a menudo usa `blob:` (MSE) — se correlaciona con hallazgos por
+ * `mediaKey` cuando existe, o con el hallazgo principal de la página.
+ */
+data class PlayState(
+    val playing: Boolean,                          // play/playing → true; pause/ended/emptied → false
+    val mediaKey: String?,                         // id del <video> (mismo espacio 'vN' que los reportes)
+    val rect: ElementRect?,                        // posición en CSS px del viewport de su frame
+    val viewportWidth: Int?,                       // innerWidth de ese frame (CSS px)
+    val viewportHeight: Int?,                      // innerHeight de ese frame (CSS px)
+    val inIframe: Boolean,                         // true si el reporte viene de un iframe (rect no es global)
+    val pageUrl: String
+) : ParsedMessage
+
+/** Rectángulo de un elemento en CSS px del viewport de su frame. */
+data class ElementRect(val x: Double, val y: Double, val w: Double, val h: Double)
 
 enum class StreamFormat { HLS, DASH, PROGRESSIVE, UNKNOWN }
 
@@ -73,8 +95,8 @@ fun streamFormatOf(url: String, mimeType: String? = null): StreamFormat {
     return when {
         mime.contains("mpegurl") || mime.contains("m3u8") -> StreamFormat.HLS
         mime.contains("dash") -> StreamFormat.DASH
-        u.contains(".m3u8") -> StreamFormat.HLS
-        u.contains(".mpd") -> StreamFormat.DASH
+        u.contains("m3u8") || u.contains(".m3u") -> StreamFormat.HLS
+        u.contains(".mpd") || u.contains("/mpd/") -> StreamFormat.DASH
         u.contains(".mp4") || u.contains(".mkv") || u.contains(".webm") ||
             mime.startsWith("video/") -> StreamFormat.PROGRESSIVE
         else -> StreamFormat.UNKNOWN

@@ -97,13 +97,53 @@
     return subs;
   }
 
+  function sendRaw(obj, countsAsFinding) {
+    try {
+      var bridge = window.DreamWebSniffer;
+      if (!bridge || typeof bridge.onVideoFound !== 'function') return; // descarte silencioso
+      bridge.onVideoFound(JSON.stringify(obj));
+      if (countsAsFinding) foundSomething = true;
+    } catch (e) {}
+  }
+
   function send(report) {
     try {
       if (!report || !isHttpMedia(report.url)) return;
-      var bridge = window.DreamWebSniffer;
-      if (!bridge || typeof bridge.onVideoFound !== 'function') return; // descarte silencioso
-      bridge.onVideoFound(JSON.stringify(report));
-      foundSomething = true;
+      sendRaw(report, true);
+    } catch (e) {}
+  }
+
+  /* --- Estado de reproducción del elemento (playstate) -------------------
+   * No lleva url: el elemento que suena a menudo usa blob: (MSE). Kotlin lo
+   * correlaciona con hallazgos por mediaKey y muestra el overlay
+   * "ver en pantalla completa" sobre el video. */
+  var playStateSent = {};    // mediaKey -> último estado enviado (dedup)
+
+  function sendPlayState(el, playing) {
+    try {
+      if (!el || !el.tagName || el.tagName.toUpperCase() !== 'VIDEO') return;
+      var key = mediaKey(el);
+      if (!key || playStateSent[key] === playing) return;
+      playStateSent[key] = playing;
+      var inIframe = true;
+      try { inIframe = (window.self !== window.top); } catch (e) {}
+      var r = null;
+      try {
+        var b = el.getBoundingClientRect();
+        if (b && b.width > 0 && b.height > 0) {
+          r = { x: b.x, y: b.y, w: b.width, h: b.height };
+        }
+      } catch (e) {}
+      sendRaw({
+        type: 'playstate',
+        playing: playing,
+        mediaKey: key,
+        rect: r,
+        vw: window.innerWidth || null,
+        vh: window.innerHeight || null,
+        inIframe: inIframe,
+        pageUrl: String(location.href)
+      }, false);
     } catch (e) {}
   }
 
@@ -168,6 +208,8 @@
         var s = sources[i];
         reportSource(el, s.src || s.getAttribute('src'), s.getAttribute('type'));
       }
+      // Video ya sonando al inyectar (modo fallback): estado inicial.
+      if (!el.paused && !el.ended) sendPlayState(el, true);
     } catch (e) {}
   }
 
@@ -248,6 +290,24 @@
     } catch (e) {}
   }, 3000);
   setTimeout(function () { clearInterval(pollId); }, 120000);
+
+  /* Listeners delegados de estado de reproducción (fase capture: play no
+   * burbujea). `document` existe en document-start aunque body aún no. */
+  try {
+    var STATE_EVENTS = { play: true, playing: true, pause: false, ended: false, emptied: false };
+    for (var ev in STATE_EVENTS) {
+      (function (name, isPlaying) {
+        document.addEventListener(name, function (e) {
+          try {
+            var t = e && e.target;
+            if (t && t.tagName && t.tagName.toUpperCase() === 'VIDEO') {
+              sendPlayState(t, isPlaying);
+            }
+          } catch (err) {}
+        }, true);
+      })(ev, STATE_EVENTS[ev]);
+    }
+  } catch (e) {}
 
   /* Hooks de HTMLMediaElement — SOLO modo document-start (R10). */
   if (!FALLBACK) {

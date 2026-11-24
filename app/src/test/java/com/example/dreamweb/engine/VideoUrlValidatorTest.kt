@@ -16,11 +16,21 @@ class VideoUrlValidatorTest {
             "https://cdn.example.com/video.mkv",
             "https://cdn.example.com/video.webm",
             "https://cdn.example.com/dash/manifest?token=abc",
-            "https://cdn.example.com/media.m3u8?token=xyz"
+            "https://cdn.example.com/media.m3u8?token=xyz",
+            "https://player.zilla-networks.com/m3u8/a408900f35f23c98f4fb83e616afedb8"
         )
         accepted.forEach {
             assertTrue("expected accepted: $it", VideoUrlValidator.isVideoUrl(it))
         }
+    }
+
+    @Test
+    fun `rejects beacons embedding the stream url in the query`() {
+        // Caso real: el ping de jwplayer (prd.jwpltx.com) lleva la URL del
+        // manifiesto en mu= — los patrones solo miran el path.
+        val ping = "https://prd.jwpltx.com/v1/jwplayer6/ping.gif" +
+            "?e=pa&mu=https%3A%2F%2Fplayer.zilla-networks.com%2Fm3u8%2Fabc&pp=hlsjs"
+        assertFalse(VideoUrlValidator.isVideoUrl(ping))
     }
 
     @Test
