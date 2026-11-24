@@ -39,6 +39,11 @@ android {
         // Requerido por Robolectric para resolver recursos en tests JVM (R12)
         unitTests.isIncludeAndroidResources = true
     }
+    tasks.withType<Test>().configureEach {
+        // Cargar el truststore de la plataforma en cada DomainTrustManager
+        // (Robolectric) agota el heap por defecto de 512 MB.
+        maxHeapSize = "2g"
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

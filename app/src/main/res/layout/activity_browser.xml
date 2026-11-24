@@ -64,20 +64,57 @@
         android:translationZ="40dp"
         android:visibility="gone" />
 
-    <ImageButton
-        android:id="@+id/externalPlayerButton"
+    <!-- Indicador de hallazgos (evolución del externalPlayerButton):
+         badge no intrusivo con nº de videos; abre el panel bajo demanda.
+         translationZ bajo el cursor virtual (50dp). -->
+    <Button
+        android:id="@+id/videoIndicatorButton"
         android:layout_width="80dp"
         android:layout_height="80dp"
         android:layout_gravity="center|end"
         android:layout_marginEnd="16dp"
         android:background="@android:drawable/toast_frame"
-        android:src="@android:drawable/ic_media_play"
-        android:scaleType="fitCenter"
-        android:padding="12dp"
+        android:padding="8dp"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
         android:visibility="gone"
         android:focusable="true"
         android:translationZ="25dp"
-        android:contentDescription="@string/external_player_desc" />
+        android:contentDescription="@string/video_indicator_desc" />
+
+    <!-- Panel de hallazgos: overlay lateral derecho ~35% ancho.
+         translationZ por encima del webView Y del cursor virtual (50dp). -->
+    <FrameLayout
+        android:id="@+id/findingsPanel"
+        android:layout_width="640dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:background="#E6111111"
+        android:visibility="gone"
+        android:translationZ="60dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/findings_panel_title"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="12dp" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/findingsRecycler"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:descendantFocusability="afterDescendants" />
+        </LinearLayout>
+    </FrameLayout>
 
     <ImageView
         android:id="@+id/virtualCursor"

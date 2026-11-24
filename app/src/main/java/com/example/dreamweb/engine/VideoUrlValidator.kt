@@ -12,24 +12,28 @@ import java.net.URISyntaxException
  */
 object VideoUrlValidator {
 
-    fun isVideoUrl(url: String): Boolean {
+    /**
+     * Solo valida esquema http/https + host parseable — sin exigir patrón de
+     * video. Usado para `pageUrl`, subtítulos y la URL del payload del player.
+     */
+    fun isHttpUrl(url: String): Boolean {
         if (url.isBlank()) return false
-
         val urlLower = url.lowercase()
-
-        // Solo esquemas http/https: bloquea javascript:, data:, file:, blob:,
-        // intent:, vbscript:, texto plano y cualquier cosa sin esquema.
         if (!urlLower.startsWith("http://") && !urlLower.startsWith("https://")) {
             return false
         }
-
-        // La URL debe parsear y tener host no vacío (rechaza malformadas).
         val uri = try {
             URI(url)
         } catch (e: URISyntaxException) {
             return false
         }
-        if (uri.host.isNullOrBlank()) return false
+        return !uri.host.isNullOrBlank()
+    }
+
+    fun isVideoUrl(url: String): Boolean {
+        if (!isHttpUrl(url)) return false
+
+        val urlLower = url.lowercase()
 
         // Extensiones y patrones de video comunes (verbatim del sniffer)
         val isVideoFormat = urlLower.contains(".m3u8") ||

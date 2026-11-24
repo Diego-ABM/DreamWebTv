@@ -3,18 +3,30 @@ package com.example.dreamweb.ui
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.dreamweb.BrowserApp
 import com.example.dreamweb.BuildConfig
 import com.example.dreamweb.databinding.ActivityBrowserBinding
-import com.example.dreamweb.security.TlsExceptionStore
 import com.example.dreamweb.engine.CustomWebClient
 import com.example.dreamweb.engine.CustomWebChromeClient
+import com.example.dreamweb.engine.Rendition
 import com.example.dreamweb.engine.SnifferBridge
+import com.example.dreamweb.engine.VideoFinding
+import com.example.dreamweb.engine.VideoFindingsRegistry
+import com.example.dreamweb.engine.VideoReport
+import com.example.dreamweb.engine.VideoSnifferInjector
+import com.example.dreamweb.managers.QualityPreferenceMemory
+import com.example.dreamweb.managers.VideoInfoProber
+import com.example.dreamweb.managers.VideoLaunchPayload
 import com.example.dreamweb.managers.VideoPlayerManager
+import com.example.dreamweb.security.PlayerHttpClientFactory
+import com.example.dreamweb.security.TlsExceptionStore
 import kotlinx.coroutines.launch
 
 class BrowserActivity : AppCompatActivity() {
@@ -22,16 +34,31 @@ class BrowserActivity : AppCompatActivity() {
     private var webView: WebView? = null
     private var chromeClient: CustomWebChromeClient? = null
     private var snifferBridge: SnifferBridge? = null
-    private var lastDetectedVideoUrl: String? = null
+
+    private val registry = VideoFindingsRegistry { QualityPreferenceMemory.lastResolutionLabel }
+    private lateinit var findingsAdapter: VideoFindingsAdapter
+    private var videoInfoProber: VideoInfoProber? = null
+    private var panelOpen = false
+    private var isFullscreenWeb = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityBrowserBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        val url = intent.getStringExtra("URL") ?: "https://www.google.com"
-        
-        setupWebView(url)
+        findingsAdapter = VideoFindingsAdapter(
+            registry,
+            onLaunch = { finding, rendition -> onLaunchRequested(finding, rendition) },
+            onQualityLaunch = { finding, rendition ->
+                // Confirmación explícita de calidad → memoria de sesión (FR-018)
+                QualityPreferenceMemory.lastResolutionLabel = rendition.resolutionLabel
+                onLaunchRequested(finding, rendition)
+            }
+        )
+        binding.findingsRecycler.layoutManager = LinearLayoutManager(this)
+        binding.findingsRecycler.adapter = findingsAdapter
+
+        setupWebView(savedInstanceState)
 
         binding.favoriteButton.setOnClickListener {
             addCurrentPageToFavorites()
@@ -50,60 +77,50 @@ class BrowserActivity : AppCompatActivity() {
             binding.adBlockCounterText.visibility = View.VISIBLE
         }
 
-        binding.externalPlayerButton.setOnClickListener {
-            android.util.Log.d("DreamWebUI", "External Player Button Clicked")
-            lastDetectedVideoUrl?.let { videoData ->
-                android.util.Log.d("DreamWebUI", "Launching player for: $videoData")
-                val ua = webView?.settings?.userAgentString ?: ""
-                val cookies = android.webkit.CookieManager.getInstance().getCookie(webView?.url) ?: ""
-                val videoDataWithExtras = "$videoData|UA|$ua|COOKIES|$cookies"
-                VideoPlayerManager.launchPlayer(webView, videoDataWithExtras)
-            } ?: run {
-                android.util.Log.d("DreamWebUI", "No video URL detected yet")
-                android.widget.Toast.makeText(this, "No se ha detectado un video aún", android.widget.Toast.LENGTH_SHORT).show()
-            }
+        binding.videoIndicatorButton.setOnClickListener {
+            toggleFindingsPanel()
         }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 val chrome = chromeClient
-                if (chrome != null && chrome.isFullscreen()) {
-                    chrome.onHideCustomView()
-                } else if (webView?.canGoBack() == true) {
-                    webView?.goBack()
-                } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
+                when {
+                    // BACK cierra el panel antes que el historial web
+                    panelOpen -> closeFindingsPanel()
+                    chrome != null && chrome.isFullscreen() -> chrome.onHideCustomView()
+                    webView?.canGoBack() == true -> webView?.goBack()
+                    else -> {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
                 }
             }
         })
     }
 
-    private fun setupWebView(url: String) {
+    private fun setupWebView(savedInstanceState: Bundle?) {
         val app = application as BrowserApp
         webView = app.container.webViewPool.getWebView(this).apply {
             webViewClient = CustomWebClient(
                 app.container.adBlockManager,
                 app.container.historyManager,
-                onVideoDetected = { videoUrl ->
-                    onVideoFound(videoUrl)
+                onVideoDetected = { report ->
+                    onVideoReport(report)
                 },
                 onPageFinishedCallback = {
                     updateAdBlockUi()
                 },
                 onPageStartedCallback = {
-                    // Navegación de main-frame → el video vigente se invalida (R3)
-                    lastDetectedVideoUrl = null
-                    binding.externalPlayerButton.visibility = View.GONE
+                    onMainFrameNavigation()
                 }
             )
-            
-            snifferBridge = SnifferBridge { videoUrl ->
+
+            snifferBridge = SnifferBridge { report ->
                 runOnUiThread {
-                    this@BrowserActivity.onVideoFound(videoUrl)
+                    this@BrowserActivity.onVideoReport(report)
                 }
             }.also { bridge ->
-                if (com.example.dreamweb.BuildConfig.DEBUG) {
+                if (BuildConfig.DEBUG) {
                     bridge.logger = { msg -> android.util.Log.d("DreamWebSniffer", msg) }
                 }
                 addJavascriptInterface(bridge, "DreamWebSniffer")
@@ -114,14 +131,14 @@ class BrowserActivity : AppCompatActivity() {
                 binding.webViewContainer,
                 binding.fullscreenContainer,
                 onFullscreenChanged = { isFullscreen ->
+                    isFullscreenWeb = isFullscreen
                     binding.virtualCursor.visibility = if (isFullscreen) View.GONE else View.VISIBLE
                     binding.favoriteButton.visibility = if (isFullscreen) View.GONE else View.VISIBLE
                     binding.adBlockCounterText.visibility =
                         if (isFullscreen || !BuildConfig.DEBUG) View.GONE else View.VISIBLE
-                    // Restauración condicionada: solo reaparece si el video
-                    // sigue vigente en la página actual (FR-002, R3)
-                    binding.externalPlayerButton.visibility =
-                        if (isFullscreen || lastDetectedVideoUrl == null) View.GONE else View.VISIBLE
+                    // Fullscreen web: indicador y panel GONE (contrato §2)
+                    if (isFullscreen) closeFindingsPanel()
+                    refreshIndicator()
                 },
                 onReceivedTitleCallback = { titleUrl, title ->
                     // Título tardío (SPA / title post-onPageFinished) → upsert
@@ -134,10 +151,188 @@ class BrowserActivity : AppCompatActivity() {
             )
             webChromeClient = chromeClient
 
-            loadUrl(url)
+            // Detector de video ANTES de cualquier navegación (contrato §1)
+            VideoSnifferInjector.install(this)
+
+            // Restauración de la sesión (contracts/playback-session.md §4)
+            when {
+                savedInstanceState != null -> {
+                    val restored = restoreState(savedInstanceState)
+                    if (restored == null) {
+                        loadUrl(savedInstanceState.getString("lastPageUrl") ?: DEFAULT_URL)
+                    }
+                }
+                intent.getStringExtra("URL") != null -> {
+                    loadUrl(intent.getStringExtra("URL")!!)
+                }
+                else -> {
+                    // Proceso muerto sin bundle ni URL: última URL del
+                    // historial, nunca pantalla en blanco (SC-003).
+                    lifecycleScope.launch {
+                        val last = app.container.historyManager
+                            .getRecentHistory(1).firstOrNull()?.url
+                        loadUrl(last ?: DEFAULT_URL)
+                    }
+                }
+            }
         }
-        
+
         binding.webViewContainer.addView(webView)
+    }
+
+    // ---------- Detección → registry → UI ----------
+
+    private fun onVideoReport(report: VideoReport) {
+        val finding = registry.submit(report) ?: return
+        refreshIndicator()
+        refreshPanelItems()
+        maybeProbe(finding)
+    }
+
+    /** Indicador no intrusivo: visible iff hallazgos ≥1 y no fullscreen. */
+    private fun refreshIndicator() {
+        val count = registry.findings().size
+        binding.videoIndicatorButton.apply {
+            if (count > 0 && !isFullscreenWeb) {
+                text = "▶ $count"
+                if (visibility != View.VISIBLE) {
+                    visibility = View.VISIBLE
+                    bringToFront()
+                }
+            } else {
+                visibility = View.GONE
+            }
+        }
+    }
+
+    private fun refreshPanelItems() {
+        findingsAdapter.submitFindings(registry.findings())
+    }
+
+    private fun toggleFindingsPanel() {
+        if (panelOpen) closeFindingsPanel() else openFindingsPanel()
+    }
+
+    private fun openFindingsPanel() {
+        if (registry.findings().isEmpty()) {
+            Toast.makeText(this, "No se ha detectado un video aún", Toast.LENGTH_SHORT).show()
+            return
+        }
+        panelOpen = true
+        refreshPanelItems()
+        binding.findingsPanel.visibility = View.VISIBLE
+        binding.findingsPanel.bringToFront()
+        // Foco en la primera fila para D-pad
+        binding.findingsPanel.post {
+            binding.findingsRecycler.findViewHolderForAdapterPosition(0)
+                ?.itemView?.requestFocus()
+        }
+    }
+
+    private fun closeFindingsPanel() {
+        panelOpen = false
+        binding.findingsPanel.visibility = View.GONE
+    }
+
+    /** Navegación de main-frame: hallazgos anteriores se invalidan (FR-004). */
+    private fun onMainFrameNavigation() {
+        registry.clear()
+        videoInfoProber?.cancelAll()
+        closeFindingsPanel()
+        refreshIndicator()
+        snifferBridge?.currentPageUrl = webView?.url ?: ""
+    }
+
+    // ---------- Sondeo acotado (US4, R5) ----------
+
+    /** Una petición máx. por hallazgo, solo si faltan duración Y resolución. */
+    private fun maybeProbe(finding: VideoFinding) {
+        if (finding.probed) return
+        if (finding.durationSec != null) return
+        if (finding.renditions.any { it.heightPx != null }) return
+
+        val prober = videoInfoProber ?: VideoInfoProber(
+            PlayerHttpClientFactory((application as BrowserApp).container.tlsExceptionStore)
+        ).also { videoInfoProber = it }
+
+        val pageUrl = finding.pageUrl.ifEmpty { webView?.url ?: "" }
+        registry.markProbed(finding.id)
+        prober.probeAsync(
+            finding = finding,
+            referer = pageUrl,
+            userAgent = webView?.settings?.userAgentString ?: VideoLaunchPayload.DEFAULT_USER_AGENT,
+            cookies = try { CookieManager.getInstance().getCookie(pageUrl) ?: "" } catch (e: Exception) { "" },
+            scope = lifecycleScope
+        ) { result ->
+            if (result != null) {
+                registry.applyProbeResult(finding.id, null, result.variants)
+                refreshPanelItems()
+            }
+        }
+    }
+
+    // ---------- Lanzamiento manual ----------
+
+    /**
+     * CENTER en fila/opción → recaptura acotada de posición (~300 ms, no
+     * bloquea el lanzamiento) y construye el payload JSON v2 desde el
+     * hallazgo + la rendición elegida (contrato §4 "Recaptura de posición").
+     */
+    private fun onLaunchRequested(finding: VideoFinding, rendition: Rendition) {
+        val wv = webView ?: return
+        val mediaKey = finding.mediaKey
+        if (mediaKey.isNullOrEmpty()) {
+            launchFinding(finding, rendition, finding.positionSec)
+            return
+        }
+
+        var fired = false
+        val proceed = { posSec: Double? ->
+            if (!fired) {
+                fired = true
+                launchFinding(finding, rendition, posSec ?: finding.positionSec)
+            }
+        }
+        val js = "(function(){try{return window.__dwGetPosition ? " +
+                "window.__dwGetPosition('${mediaKey.replace("'", "")}') : null;}catch(e){return null;}})()"
+        try {
+            wv.evaluateJavascript(js) { value ->
+                val pos = value
+                    ?.takeIf { it != "null" }
+                    ?.removeSurrounding("\"")
+                    ?.toDoubleOrNull()
+                    ?.takeIf { it >= 0 }
+                proceed(pos)
+            }
+            wv.postDelayed({ proceed(null) }, POSITION_RECAPTURE_TIMEOUT_MS)
+        } catch (e: Exception) {
+            proceed(null)
+        }
+    }
+
+    private fun launchFinding(finding: VideoFinding, rendition: Rendition, positionSec: Double?) {
+        val wv = webView ?: return
+        closeFindingsPanel()
+
+        val pageUrl = finding.pageUrl.ifEmpty { wv.url ?: "" }
+        val payload = VideoLaunchPayload(
+            url = rendition.url,
+            referer = pageUrl,
+            userAgent = wv.settings.userAgentString ?: VideoLaunchPayload.DEFAULT_USER_AGENT,
+            cookies = try { CookieManager.getInstance().getCookie(pageUrl) ?: "" } catch (e: Exception) { "" },
+            headers = finding.headers,
+            subtitles = finding.subtitles,
+            startPositionMs = ((positionSec ?: 0.0) * 1000).toLong().coerceAtLeast(0),
+            mimeType = finding.mimeType ?: mimeHintFor(rendition)
+        )
+        VideoPlayerManager.launchPlayer(wv, payload.toJson())
+    }
+
+    private fun mimeHintFor(rendition: Rendition): String? = when (rendition.format) {
+        com.example.dreamweb.engine.StreamFormat.HLS -> "application/vnd.apple.mpegurl"
+        com.example.dreamweb.engine.StreamFormat.DASH -> "application/dash+xml"
+        com.example.dreamweb.engine.StreamFormat.PROGRESSIVE -> "video/mp4"
+        com.example.dreamweb.engine.StreamFormat.UNKNOWN -> null
     }
 
     private fun toggleUserAgent() {
@@ -146,9 +341,9 @@ class BrowserActivity : AppCompatActivity() {
             val nextUA = com.example.dreamweb.engine.UserAgentConfig.getNext(currentUA)
             wv.settings.userAgentString = nextUA
             wv.reload()
-            
+
             val name = com.example.dreamweb.engine.UserAgentConfig.getName(nextUA)
-            android.widget.Toast.makeText(this, "Modo: $name", android.widget.Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Modo: $name", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -157,16 +352,16 @@ class BrowserActivity : AppCompatActivity() {
         val app = application as BrowserApp
         val host = TlsExceptionStore.normalize(webView?.url ?: "")
         if (host.isEmpty()) {
-            android.widget.Toast.makeText(this, "Sin página cargada", android.widget.Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Sin página cargada", Toast.LENGTH_SHORT).show()
             return
         }
         val store = app.container.adBlockWhitelistStore
         if (store.isExcepted(host)) {
             store.remove(host)
-            android.widget.Toast.makeText(this, "Ads bloqueados en $host", android.widget.Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Ads bloqueados en $host", Toast.LENGTH_SHORT).show()
         } else {
             store.add(host)
-            android.widget.Toast.makeText(this, "Ads permitidos en $host", android.widget.Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Ads permitidos en $host", Toast.LENGTH_SHORT).show()
         }
         updateAdBlockUi()
         webView?.reload()
@@ -188,25 +383,12 @@ class BrowserActivity : AppCompatActivity() {
         binding.adBlockToggleButton.alpha = if (excepted) 1.0f else 0.45f
     }
 
-    private fun onVideoFound(videoData: String) {
-        if (videoData.startsWith("blob:")) return
-        
-        // Separar URL de Referer si existe
-        val parts = videoData.split("|REFERER|")
-        val videoUrl = parts[0]
-        
-        val urlLower = videoUrl.lowercase()
-        // Priorizar HLS (.m3u8) sobre MP4 simple
-        if (lastDetectedVideoUrl?.contains(".m3u8") == true && urlLower.contains(".mp4")) return
-
-        lastDetectedVideoUrl = videoData // Guardamos toda la cadena con el referer
-        runOnUiThread {
-            binding.externalPlayerButton.apply {
-                visibility = View.VISIBLE
-                alpha = 1.0f
-                isEnabled = true
-                bringToFront()
-            }
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Degradación nivel 2: pila+página del WebView + última URL (§4)
+        webView?.let {
+            it.saveState(outState)
+            outState.putString("lastPageUrl", it.url)
         }
     }
 
@@ -236,13 +418,26 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Panel abierto: la navegación D-pad la gestiona el foco estándar
+        // del RecyclerView; MENU cierra; BACK lo cubre onBackPressed.
+        if (panelOpen) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_MENU) {
+                closeFindingsPanel()
+                return true
+            }
+            return super.dispatchKeyEvent(event)
+        }
+        if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_MENU) {
+            toggleFindingsPanel()
+            return true
+        }
         val app = application as BrowserApp
         webView?.let {
             val nativeViews = listOf(
                 binding.favoriteButton,
                 binding.uaToggleButton,
                 binding.adBlockToggleButton,
-                binding.externalPlayerButton
+                binding.videoIndicatorButton
             )
             if (app.container.dpadHandler.handleKeyEvent(event, it, binding.virtualCursor, nativeViews)) {
                 return true
@@ -262,6 +457,8 @@ class BrowserActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        videoInfoProber?.cancelAll()
+        videoInfoProber = null
         webView?.let {
             val app = application as BrowserApp
             binding.webViewContainer.removeView(it)
@@ -273,5 +470,10 @@ class BrowserActivity : AppCompatActivity() {
             webView = null
         }
         super.onDestroy()
+    }
+
+    companion object {
+        private const val DEFAULT_URL = "https://www.google.com"
+        private const val POSITION_RECAPTURE_TIMEOUT_MS = 300L
     }
 }

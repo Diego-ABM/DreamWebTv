@@ -5,10 +5,11 @@ DreamWeb es un navegador web ultra-ligero optimizado para **Android TV**, diseñ
 ---
 
 ## ⚠️ Estado Actual del Proyecto
-- **Reproductor Nativo / Extracción de Video:** Funcionalidad experimental. La detección por red y el bridge JS comparten el mismo validador (`VideoUrlValidator`); el lanzamiento del player nativo funciona con URLs detectadas.
-- **Seguridad (Completado):** El canal de red del reproductor valida TLS de verdad (sin trust-all). Ante un certificado inválido se muestra un diálogo que nombra el dominio; **Aceptar** guarda una excepción solo para ese dominio (persistente, revocable desde Home → "Seguridad") y reintenta el stream automáticamente. **Rechazar** cancela sin persistir.
-- **Bridge JavaScript (Completado):** `DreamWebSniffer` es una clase nombrada (`SnifferBridge`) que valida toda entrada con `VideoUrlValidator`, no retiene la Activity y se desregistra al reciclar el WebView.
-- **Tests (Completado):** Infraestructura JUnit4 en `app/src/test` ejecutable con `./gradlew test` (validador de URLs, parsing del payload del player, normalización de dominio TLS, comportamiento del bridge).
+- **Captura y Reproducción de Video (feature 004, rama `004-video-capture-playback`):** Implementada. Un detector JS inyectado en document-start (`video_detector.js`, con fallback en `onPageFinished`) reporta hallazgos estructurados (`VideoReport`) por el bridge `DreamWebSniffer`; `VideoReportParser` valida y sanitiza en la frontera; `VideoFindingsRegistry` deduplica por URL, fusiona mutaciones por `mediaKey` (cap 64) y agrupa rendiciones. Un indicador no intrusivo (z-order bajo el cursor virtual) aparece con el nº de hallazgos; el panel lateral `findingsPanel` se abre con click/CENTER/MENU y lanza el player nativo solo a petición del usuario (sin auto-play). El payload del player es **JSON v2** (`url/referer/userAgent/cookies/headers/subtitles/startPositionMs/mimeType`, con parser dual que conserva compatibilidad legado) y antes del lanzamiento se recaptura `positionSec` con un `evaluateJavascript` acotado (~300 ms). Calidad con memoria de sesión (RAM, sin persistencia) y sondeo acotado `VideoInfoProber` (1 petición por hallazgo, solo si faltan duración Y resolución).
+- **Seguridad (Completado):** El canal de red del reproductor valida TLS de verdad (sin trust-all): `PlayerHttpClientFactory` monta `DomainTrustManager` + `DomainHostnameVerifier` y aplica headers en capas — capturados sanitizados (jamás nombres gestionados ni `Sec-Fetch-*`), luego gestionados autoritativos (`User-Agent`, `Referer`, `Origin` derivado, `Cookie`, `Sec-Fetch-Mode/Site`, `Accept`). Ante un certificado inválido se muestra un diálogo que nombra el dominio; **Aceptar** guarda una excepción solo para ese dominio (persistente, revocable desde Home → "Seguridad") y reintenta el stream automáticamente. **Rechazar** cancela sin persistir.
+- **Suspensión/Restauración (Completado):** `VideoPlayerManager` valida el payload **antes** de congelar (`onPause`+`pauseTimers`), revierte si `startActivity` falla y reanuda al volver (`releasePlayer`, idempotente). `BrowserActivity` persiste `webView.saveState` + `lastPageUrl` y restaura desde `saveState`, extra `URL` o última entrada del historial — nunca pantalla en blanco.
+- **Bridge JavaScript (Completado):** `DreamWebSniffer` acepta un único JSON (`onVideoFound(String)`), validado por `VideoReportParser` (URL http(s), cabeceras, límites de esquema); no retiene la Activity y se desregistra al reciclar el WebView (`ScriptHandler.remove()` incluido).
+- **Tests (Completado):** 134 tests JUnit4/Robolectric en `app/src/test` ejecutables con `./gradlew test` — validador de URLs, parser de reportes, registry de hallazgos (dedup/mutación/agrupación/memoria de sesión), filtro de subtítulos, payload JSON v2 + dual legado, merge de headers del player y comportamiento del bridge.
 
 ---
 
@@ -31,10 +32,15 @@ El proyecto sigue una estructura de módulo único para maximizar la velocidad d
  ├── 📄 AppContainer.kt           <-- Inyección de dependencias manual (Service Locator)
  ├── 📂 engine
  │    ├── 📄 WebViewPool.kt       <-- Gestión de instancia única pre-calentada (limpieza simétrica al reciclar)
- │    ├── 📄 CustomWebClient.kt   <-- Interceptor de red (AdBlock + Video Sniffer)
+ │    ├── 📄 CustomWebClient.kt   <-- Interceptor de red (AdBlock + hallazgos NETWORK) + inyección fallback
  │    ├── 📄 CustomWebChromeClient.kt <-- Gestión de pantalla completa y video
  │    ├── 📄 VideoUrlValidator.kt <-- Heurística compartida de detección de video (http/https + patrones)
- │    └── 📄 SnifferBridge.kt     <-- Bridge JS "DreamWebSniffer" con entrada validada, sin retener Activity
+ │    ├── 📄 VideoModels.kt       <-- VideoReport/VideoFinding/Rendition/SubtitleTrack/StreamFormat
+ │    ├── 📄 VideoReportParser.kt <-- Frontera de sanidad: esquema, límites, headers/subtítulos
+ │    ├── 📄 VideoFindingsRegistry.kt <-- Dedup URL, mutación por mediaKey, agrupación, cap 64
+ │    ├── 📄 VideoSnifferInjector.kt <-- addDocumentStartJavaScript (WebViewCompat) con handle simétrico
+ │    ├── 📄 SubtitleTrackFilter.kt <-- Solo .vtt/.srt/.ttml; el resto se omite
+ │    └── 📄 SnifferBridge.kt     <-- Bridge JS "DreamWebSniffer" (JSON → VideoReport), sin retener Activity
  ├── 📂 security
  │    ├── 📄 TlsExceptionStore.kt  <-- Excepciones TLS por dominio (SharedPreferences, revocables)
  │    ├── 📄 DomainTrustManager.kt <-- Delega en plataforma; bypass solo por host exceptuado
@@ -48,13 +54,17 @@ El proyecto sigue una estructura de módulo único para maximizar la velocidad d
  ├── 📂 managers
  │    ├── 📄 BookmarkManager.kt   <-- SQLite: Favoritos con precarga
  │    ├── 📄 HistoryManager.kt    <-- SQLite: Historial indexado
- │    ├── 📄 VideoLaunchPayload.kt <-- Parse del payload "url|REFERER|UA|COOKIES" del player
+ │    ├── 📄 VideoLaunchPayload.kt <-- Payload JSON v2 (dual-parse con legado "url|REFERER|…")
+ │    ├── 📄 VideoInfoProber.kt   <-- Sondeo acotado (1 petición/hallazgo) + parser de manifiesto HLS
+ │    ├── 📄 QualityPreferenceMemory.kt <-- Preferencia de calidad solo en RAM (sesión)
+ │    ├── 📄 VideoPlayerManager.kt <-- Freeze/release del WebView con validación previa al freeze
  │    └── 📄 DpadHandler.kt       <-- Manejo de cursor virtual y scroll para remoto
  ├── 📂 metrics
  │    └── 📄 PerformanceMonitor.kt <-- Telemetría de FPS y estabilidad en tiempo real
  └── 📂 ui
       ├── 📄 HomeActivity.kt      <-- UI 100% nativa de arranque rápido (entrada "Seguridad")
-      ├── 📄 BrowserActivity.kt   <-- Contenedor dinámico del WebView Pool
+      ├── 📄 BrowserActivity.kt   <-- Contenedor dinámico del WebView Pool + indicador/panel de hallazgos
+      ├── 📄 VideoFindingsAdapter.kt <-- Filas del panel + sub-fila de calidades (D-pad)
       ├── 📄 NativeVideoActivity.kt <-- Reproductor ExoPlayer con TLS verificado + diálogo de excepción
       └── 📄 SecuritySettingsActivity.kt <-- "Seguridad y privacidad": excepciones TLS + whitelist AdBlock
 ```
@@ -68,10 +78,11 @@ El motor parsea las listas **completas** empaquetadas en `assets/filters/` (Easy
 
 **Medición real (23-11-2026, suite `AdBlockEffectivenessTest`):** 100% de los dominios muestreados de las reglas aceptadas bloqueados (200/200) y **0 falsos positivos** sobre 102 dominios legítimos top.
 
-### B. Extractor Nativo de Video (Video Sniffer + ExoPlayer)
-Identificamos flujos multimedia (.m3u8, .mp4, .mpd) para lanzar una actividad nativa.
-- **Congelamiento de WebView:** Se invocan `onPause()` y `pauseTimers()` para liberar recursos durante la reproducción.
-- **Aceleración HW:** Uso de `media3-exoplayer` para decodificación eficiente en 1080p/4K.
+### B. Captura y Reproducción de Video (detección estructurada + player nativo)
+Identificamos flujos multimedia (.m3u8, .mp4, .mpd) por dos vías: el detector JS (`video_detector.js`, document-start con fallback en `onPageFinished`; hooks `src`/`srcObject`/`setAttribute`, MutationObserver de `<track>` y sondeo acotado) y `shouldInterceptRequest` (hallazgos `NETWORK` con cabeceras de la WebView sanitizadas — nunca `Sec-Fetch-*`). Los `VideoReport` se consolidan en `VideoFindingsRegistry` (dedup por URL, mutación del stream vigente por `mediaKey`, agrupación por resolución/formato, preferencia HLS > DASH > progresivo y memoria de sesión `QualityPreferenceMemory`, cap 64 hallazgos).
+- **Presentación manual:** un `Button` indicador (`videoIndicatorButton`, bajo el cursor virtual) muestra `▶ N`; el panel `findingsPanel` (sobre WebView y cursor) lista filas con título/formato/resolución/duración/subtítulos y sub-fila `▸ Calidad:` cuando hay >1 opción. Sin diálogos automáticos ni auto-play; el lanzamiento siempre lo confirma el usuario (CENTER sobre fila u opción, click, o `KEYCODE_MENU` para abrir/cerrar).
+- **Lanzamiento:** recaptura acotada de `positionSec` (~300 ms, no bloquea) → payload JSON v2 → `VideoPlayerManager.launchPlayer` valida antes de congelar el WebView (`onPause`+`pauseTimers`) y reanuda al volver (`releasePlayer`, idempotente). Errores de stream caducado/denegado y DRM comercial muestran mensajes claros y devuelven la navegación intacta.
+- **Aceleración HW:** Uso de `media3-exoplayer` para decodificación eficiente en 1080p/4K con subtítulos (`vtt/srt/ttml`) vía `SubtitleConfiguration`.
 
 ---
 

@@ -54,6 +54,13 @@ class NativeVideoActivity : AppCompatActivity() {
         httpClientFactory = factory
 
         val payload = VideoLaunchPayload.parse(videoData)
+        if (payload == null) {
+            // Payload no parseable: nunca se congeló el WebView (T026 lo
+            // valida antes), vuelta intacta con aviso claro (FR-012).
+            Toast.makeText(this, "No se pudo reproducir el video", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
 
         if (BuildConfig.DEBUG) {
             Log.d(TAG, "URL: ${payload.url}")
@@ -66,15 +73,13 @@ class NativeVideoActivity : AppCompatActivity() {
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(dataSourceFactory))
             .build().apply {
-            val mediaItem = MediaItem.Builder()
-                .setUri(payload.url)
-                .setMimeType(when {
-                    payload.url.contains(".m3u8") -> MimeTypes.APPLICATION_M3U8
-                    payload.url.contains(".mpd") -> MimeTypes.APPLICATION_MPD
-                    else -> null
-                })
-                .build()
-            setMediaItem(mediaItem)
+            val mediaItem = buildMediaItem(payload)
+            // Posición de origen solo si >0 — sin seekTo(0) redundante.
+            if (payload.startPositionMs > 0) {
+                setMediaItem(mediaItem, payload.startPositionMs)
+            } else {
+                setMediaItem(mediaItem)
+            }
             prepare()
             playWhenReady = true
         }
@@ -98,16 +103,56 @@ class NativeVideoActivity : AppCompatActivity() {
                 val tlsCategory = findTlsCause(error)
                 if (tlsCategory != null) {
                     showTlsDialog(tlsCategory, payload)
-                } else {
+                } else if (isDrmError(error)) {
                     Toast.makeText(
                         this@NativeVideoActivity,
-                        "Error: ${error.message ?: "Servidor denegó acceso"}",
+                        "contenido protegido no soportado",
                         Toast.LENGTH_LONG
                     ).show()
+                    finish()
+                } else {
+                    // Stream caducado/denegado/red: mensaje claro + vuelta
+                    // intacta a la navegación para reintentar (FR-012).
+                    Toast.makeText(
+                        this@NativeVideoActivity,
+                        "no se pudo reproducir (caducado o sin acceso); recarga la página",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    finish()
                 }
             }
         })
     }
+
+    /** MediaItem con hint de mimeType y pistas de subtítulos del payload. */
+    private fun buildMediaItem(payload: VideoLaunchPayload): MediaItem {
+        val builder = MediaItem.Builder()
+            .setUri(payload.url)
+            .setMimeType(
+                payload.mimeType ?: when {
+                    payload.url.contains(".m3u8") -> MimeTypes.APPLICATION_M3U8
+                    payload.url.contains(".mpd") -> MimeTypes.APPLICATION_MPD
+                    else -> null
+                }
+            )
+
+        if (payload.subtitles.isNotEmpty()) {
+            builder.setSubtitleConfigurations(
+                payload.subtitles.map { track ->
+                    MediaItem.SubtitleConfiguration.Builder(Uri.parse(track.url))
+                        .setMimeType(track.mimeType)
+                        .apply { track.language?.let { setLanguage(it) } }
+                        .apply { track.label?.let { setLabel(it) } }
+                        .build()
+                }
+            )
+        }
+        return builder.build()
+    }
+
+    /** Errores de DRM comercial (60xx) → degradación documentada del spec. */
+    private fun isDrmError(error: PlaybackException): Boolean =
+        error.errorCode in 6000..6099
 
     /**
      * Recorre la cadena de causas buscando fallos TLS y los mapea a una

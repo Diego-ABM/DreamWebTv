@@ -22,7 +22,7 @@ import java.net.URISyntaxException
 class CustomWebClient(
     private val adBlockManager: AdBlockManager,
     private val historyManager: HistoryManager,
-    private val onVideoDetected: (String) -> Unit,
+    private val onVideoDetected: (VideoReport) -> Unit,
     private val onPageFinishedCallback: () -> Unit = {},
     private val onPageStartedCallback: () -> Unit = {}
 ) : WebViewClient() {
@@ -118,13 +118,22 @@ class CustomWebClient(
     ): WebResourceResponse? {
         val url = request?.url?.toString() ?: return null
 
-        // Video Sniffing: misma heurística que el bridge JS vía VideoUrlValidator
+        // Video Sniffing (canal de red): misma frontera VideoUrlValidator +
+        // headers reales de la petición sanitizados como los del bridge JS
+        // (R3/US2-3). pageUrl = lastPageUrl (jamás view.url en hilo worker).
         if (VideoUrlValidator.isVideoUrl(url)) {
             android.util.Log.d("DreamWebSniffer", "Media file detected: $url")
+            val report = VideoReport(
+                url = url,
+                pageUrl = lastPageUrl ?: "",
+                format = streamFormatOf(url, null),
+                headers = VideoReportParser.sanitizeHeaders(
+                    request.requestHeaders ?: emptyMap()
+                ),
+                source = DetectionSource.NETWORK
+            )
             scope.launch {
-                // Capturamos el Referer y el User-Agent actual para el reproductor
-                val referer = view?.url ?: ""
-                onVideoDetected("$url|REFERER|$referer")
+                onVideoDetected(report)
             }
         }
 
@@ -145,7 +154,7 @@ class CustomWebClient(
         android.util.Log.d("DreamWebSniffer", "Page Finished: $url")
         view?.let {
             injectDarkMode(it)
-            injectVideoSniffer(it)
+            injectVideoSnifferFallback(it)
         }
         // Registro del historial con el título definitivo (FR-001, R1):
         // view.title aquí es el de ESTA página; la dedup consecutiva de
@@ -161,81 +170,17 @@ class CustomWebClient(
         onPageFinishedCallback()
     }
 
-    private fun injectVideoSniffer(webView: WebView) {
-        android.util.Log.d("DreamWebSniffer", "Injecting JS Sniffer")
-        val js = """
-            (function() {
-                console.log('DreamWeb JS Sniffer Active');
-                var notified = false;
-
-                function notify(src) {
-                    if (src && src.startsWith('http') && !src.includes('blob:')) {
-                        if (!notified) {
-                            notified = true;
-                            clearInterval(pollId); // sondeo apagado tras 1ª detección (FR-006)
-                        }
-                        window.DreamWebSniffer.onVideoFound(src);
-                    }
-                }
-
-                function checkVideos() {
-                    // 1. Escaneo de etiquetas <video>
-                    var videos = document.getElementsByTagName('video');
-                    for (var i = 0; i < videos.length; i++) {
-                        var src = videos[i].src || videos[i].currentSrc;
-                        notify(src);
-
-                        var sources = videos[i].getElementsByTagName('source');
-                        for (var k = 0; k < sources.length; k++) {
-                            notify(sources[k].src);
-                        }
-                    }
-
-                    // 2. Escaneo de iframes (común en sitios de streaming)
-                    var iframes = document.getElementsByTagName('iframe');
-                    for (var j = 0; j < iframes.length; j++) {
-                        var isrc = iframes[j].src;
-                        if (isrc && (isrc.includes('embed') || isrc.includes('player') || isrc.includes('video'))) {
-                            // Intentamos detectar si el iframe apunta directamente a un stream
-                            if (isrc.includes('.m3u8') || isrc.includes('.mp4')) {
-                                notify(isrc);
-                            }
-                        }
-                    }
-
-                    // 3. Variables de reproductores comunes (JWPlayer, VideoJS, etc)
-                    try {
-                        if (window.jwplayer) {
-                            var p = window.jwplayer();
-                            if (p && p.getPlaylist) {
-                                var item = p.getPlaylist()[0];
-                                if (item && item.file) notify(item.file);
-                            }
-                        }
-                        if (window.videojs) {
-                            var players = window.videojs.players;
-                            for (var p in players) {
-                                notify(players[p].currentSrc());
-                            }
-                        }
-                    } catch(e) {}
-                }
-
-                // Monitorizar cambios en el DOM para nuevos videos
-                var observer = new MutationObserver(function(mutations) {
-                    checkVideos();
-                });
-                observer.observe(document.body, { childList: true, subtree: true });
-
-                // pollId se declara ANTES del primer checkVideos: una detección
-                // inmediata debe poder apagar el sondeo (FR-006).
-                var pollId = setInterval(checkVideos, 10000); // Chequeo periódico fallback
-                // Backstop: ningún intervalo supera 2 min por documento (FR-006)
-                setTimeout(function() { clearInterval(pollId); }, 120000);
-                checkVideos();
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js, null)
+    /**
+     * Fallback de detección cuando DOCUMENT_START_SCRIPT no está soportado
+     * por el WebView del dispositivo (contracts/video-detection-bridge.md §1):
+     * evalúa el mismo asset en modo fallback (sin hooks de setters).
+     */
+    private fun injectVideoSnifferFallback(webView: WebView) {
+        if (VideoSnifferInjector.documentStartActive) return
+        android.util.Log.d("DreamWebSniffer", "Injecting JS Sniffer (fallback)")
+        webView.evaluateJavascript(
+            VideoSnifferInjector.fallbackScript(webView.context), null
+        )
     }
 
     private fun injectDarkMode(webView: WebView) {

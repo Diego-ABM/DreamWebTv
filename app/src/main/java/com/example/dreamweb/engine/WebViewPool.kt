@@ -59,8 +59,9 @@ class WebViewPool(private val context: Context) {
         webView.apply {
             stopLoading()
             // Limpieza simétrica del ciclo de vida (FR-006, Principio V):
-            // quitar el bridge JS, cancelar el scope del client saliente y
-            // resetear ambos clients antes de reciclar el WebView.
+            // ScriptHandler del detector document-start, bridge JS, scope
+            // del client saliente y ambos clients antes de reciclar.
+            VideoSnifferInjector.uninstall(this)
             removeJavascriptInterface("DreamWebSniffer")
             (webViewClient as? CustomWebClient)?.release()
             webViewClient = WebViewClient()

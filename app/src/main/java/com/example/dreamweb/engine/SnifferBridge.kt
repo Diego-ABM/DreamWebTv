@@ -3,30 +3,38 @@ package com.example.dreamweb.engine
 import android.webkit.JavascriptInterface
 
 /**
- * Bridge JavaScript "DreamWebSniffer" (FR-006/FR-007). Reemplaza al objeto
- * anónimo que capturaba BrowserActivity: no guarda referencias a
- * Activity/Context — solo un callback nullable que queda inalcanzable al
- * remover la interfaz del WebView.
+ * Bridge JavaScript "DreamWebSniffer" (contracts/video-detection-bridge.md
+ * §2). Mantiene el nombre de clase y de interfaz JS vigentes; la firma del
+ * mensaje pasa de `(url)` a `(json)` — el reporte estructurado se valida en
+ * [VideoReportParser] (frontera no confiable, Principio II) antes de tocar
+ * el registry.
  *
- * Toda entrada se valida con [VideoUrlValidator] — exactamente la misma
- * heurística que el sniffer de red — antes de invocar el callback; cualquier
- * otra cosa se descarta silenciosamente (loggable en debug vía [logger]).
+ * No guarda referencias a Activity/Context — solo un callback nullable que
+ * queda inalcanzable al remover la interfaz del WebView. [release] anula el
+ * callback para que invocaciones JS ya encoladas sean no-op incluso antes
+ * de removeJavascriptInterface.
  *
- * release() anula el callback para que invocaciones JS ya encoladas sean
- * no-op incluso antes de removeJavascriptInterface.
+ * [currentPageUrl] se actualiza desde el hilo principal en cada navegación
+ * de main-frame (el bridge corre en el hilo JavaBridge y no puede leer
+ * `webView.url`): es el referer de respaldo cuando el reporte trae una
+ * `pageUrl` ausente o no-http.
  */
-class SnifferBridge(private var onVideoFound: ((String) -> Unit)?) {
+class SnifferBridge(private var onVideoFound: ((VideoReport) -> Unit)?) {
 
     /** Log opcional de rechazos (asignar en debug, p.ej. Log::d). */
     var logger: ((String) -> Unit)? = null
 
+    @Volatile
+    var currentPageUrl: String = ""
+
     @JavascriptInterface
-    fun onVideoFound(url: String) {
-        if (!VideoUrlValidator.isVideoUrl(url)) {
-            logger?.invoke("DreamWebSniffer: rejected video candidate")
+    fun onVideoFound(json: String) {
+        val report = VideoReportParser.parse(json, currentPageUrl)
+        if (report == null) {
+            logger?.invoke("DreamWebSniffer: rejected video report")
             return
         }
-        onVideoFound?.invoke(url)
+        onVideoFound?.invoke(report)
     }
 
     fun release() {

@@ -4,19 +4,35 @@ import android.app.Activity
 import android.content.Intent
 import android.webkit.WebView
 import android.widget.Toast
+import com.example.dreamweb.engine.VideoUrlValidator
 import com.example.dreamweb.ui.NativeVideoActivity
 
 object VideoPlayerManager {
     private var isPlaying = false
 
-    fun launchPlayer(webView: WebView?, videoUrl: String) {
+    /**
+     * Lanza el player nativo con el payload JSON v2 (contrato §2 de
+     * playback-context-payload). Valida ANTES de congelar: contexto vivo,
+     * latch libre y payload parseable con url http(s) — un lanzamiento
+     * inválido nunca deja el WebView suspendido ni el latch tomado
+     * (escenario "fallo al lanzar" del spec).
+     */
+    fun launchPlayer(webView: WebView?, payloadJson: String) {
         if (isPlaying) return
 
-        // Validar ANTES de marcar el latch (FR-003, R4): contexto nulo o
-        // activity muriendo → descarte limpio, isPlaying nunca queda latcheado.
         val context = webView?.context ?: return
         (context as? Activity)?.let {
             if (it.isFinishing || it.isDestroyed) return
+        }
+
+        val payload = VideoLaunchPayload.parse(payloadJson)
+        if (payload == null || !VideoUrlValidator.isHttpUrl(payload.url)) {
+            Toast.makeText(
+                context,
+                "No se pudo lanzar el video (datos inválidos)",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
         }
 
         // Congelación absoluta del motor Chromium trasero para liberar RAM
@@ -27,13 +43,13 @@ object VideoPlayerManager {
         isPlaying = true
 
         val intent = Intent(context, NativeVideoActivity::class.java).apply {
-            putExtra("EXTRA_VIDEO_URL", videoUrl)
+            putExtra("EXTRA_VIDEO_URL", payloadJson)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         try {
             context.startActivity(intent)
         } catch (e: Exception) {
-            // Revertir el offloading si el lanzamiento falla
+            // Revertir el offloading si el lanzamiento falla (vigente)
             isPlaying = false
             webView.apply {
                 onResume()
