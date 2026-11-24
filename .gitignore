@@ -42,3 +42,6 @@ local.properties
 # Android Studio Navigation editor temp files
 analysis/
 MejorasPro.txt
+
+# Notas/reglas locales para agentes
+AGENTS.md
